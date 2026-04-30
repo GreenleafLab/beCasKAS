@@ -1,0 +1,45 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema",
+    "$id": "https://raw.githubusercontent.com/GreenleafLab/beCasKAS/main/nextflow/configs/samplesheet_schema.json",
+    "title": "beCasKAS samplesheet schema",
+    "description": "Schema for the input samplesheet CSV",
+    "type": "array",
+    "items": {
+        "type": "object",
+        "required": ["sample_id", "fastq_1", "condition", "replicate"],
+        "properties": {
+            "sample_id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.-]+$",
+                "errorMessage": "sample_id must contain only letters, numbers, underscores, dots, and hyphens; must be unique."
+            },
+            "fastq_1": {
+                "type": "string",
+                "format": "file-path",
+                "pattern": "\\.(fastq|fq)(\\.gz)?$",
+                "errorMessage": "fastq_1 must be a path to a .fastq, .fq, .fastq.gz, or .fq.gz file"
+            },
+            "fastq_2": {
+                "type": ["string", "null"],
+                "format": "file-path",
+                "pattern": "\\.(fastq|fq)(\\.gz)?$",
+                "errorMessage": "fastq_2 must be a path to a .fastq, .fq, .fastq.gz, or .fq.gz file (or empty for single-end)"
+            },
+            "condition": {
+                "type": "string",
+                "enum": ["input", "control", "treatment"],
+                "errorMessage": "condition must be one of: input, control, treatment"
+            },
+            "replicate": {
+                "type": "integer",
+                "minimum": 1,
+                "errorMessage": "replicate must be a positive integer"
+            },
+            "control_id": {
+                "type": ["string", "null"],
+                "errorMessage": "control_id must be a sample_id from this samplesheet (the input sample for MACS2 -c)"
+            }
+        },
+        "uniqueEntries": ["sample_id"]
+    }
+}

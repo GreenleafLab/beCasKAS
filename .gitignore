@@ -1,0 +1,45 @@
+# Nextflow
+.nextflow*
+work/
+results/
+*.nf.log
+
+# Containers
+*.sif
+*.tar
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+
+# References
+references/
+*.fasta
+*.fa
+*.fa.gz
+*.vcf.gz
+*.vcf.gz.tbi
+*.fai
+*.dict
+
+# R
+.Rhistory
+.RData
+.Rproj.user/
+.Renviron
+
+# Tests
+tests/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+.venv/
+venv/
+.env
