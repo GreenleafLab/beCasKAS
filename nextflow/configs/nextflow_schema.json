@@ -1,0 +1,136 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema",
+    "$id": "https://raw.githubusercontent.com/GreenleafLab/beCasKAS/main/nextflow/configs/nextflow_schema.json",
+    "title": "beCasKAS pipeline parameters",
+    "description": "Reproducible Nextflow pipeline for beCasKAS off-target base editor analysis",
+    "type": "object",
+    "definitions": {
+        "input_output_options": {
+            "title": "Input/output options",
+            "type": "object",
+            "required": ["samplesheet"],
+            "properties": {
+                "samplesheet": {
+                    "type": "string",
+                    "format": "file-path",
+                    "schema": "nextflow/configs/samplesheet_schema.json",
+                    "description": "Path to samplesheet CSV with columns: sample_id, fastq_1, fastq_2, condition, replicate, control_id"
+                },
+                "outdir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "default": "results",
+                    "description": "Output directory"
+                }
+            }
+        },
+        "reference_options": {
+            "title": "Reference data options",
+            "type": "object",
+            "required": ["reference_dir"],
+            "properties": {
+                "reference_dir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Directory containing pre-staged hg38 references. Required layout: hg38.fasta, hg38.fasta.fai, hg38.dict, hg38.genome (chrom sizes), hg38_Bowtie2Index/hg38.{1,2,3,4,rev.1,rev.2}.bt2, af-only-gnomad.hg38.vcf.gz(.tbi), 1000g_pon.hg38.vcf.gz(.tbi). User is responsible for staging these files; see README."
+                }
+            }
+        },
+        "trim_align_options": {
+            "title": "trim_align step",
+            "type": "object",
+            "properties": {
+                "clip_r2": {
+                    "type": "integer",
+                    "default": 12,
+                    "description": "Bases to clip from 5' of R2 (adaptase library prep)"
+                }
+            }
+        },
+        "peak_call_options": {
+            "title": "peak_call step",
+            "type": "object",
+            "properties": {
+                "macs2_mode": {
+                    "type": "string",
+                    "enum": ["sharp", "broad"],
+                    "default": "sharp",
+                    "description": "MACS2 mode (KAS-Analyzer peakscalling -b flag)"
+                }
+            }
+        },
+        "differential_peaks_options": {
+            "title": "differential_peaks step",
+            "type": "object",
+            "properties": {
+                "fdr": {
+                    "type": "number",
+                    "default": 0.05,
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "FDR cutoff for differential peaks"
+                },
+                "lfc": {
+                    "type": "number",
+                    "default": 1,
+                    "description": "log2 fold-change cutoff"
+                },
+                "min_overlap": {
+                    "type": "integer",
+                    "default": 2,
+                    "minimum": 1,
+                    "description": "DiffBind minOverlap (peaks present in N+ samples to enter consensus)"
+                },
+                "greylist": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Apply DiffBind greylist masking"
+                },
+                "n_pseudo_replicates": {
+                    "type": "integer",
+                    "default": 3,
+                    "minimum": 2,
+                    "description": "Pseudo-replicates per condition when only n=1 sample is provided"
+                }
+            }
+        },
+        "reproducibility_options": {
+            "title": "Reproducibility",
+            "type": "object",
+            "properties": {
+                "seed": {
+                    "type": "integer",
+                    "default": 42,
+                    "description": "Random seed used by R analyses and BAM-split partitioning"
+                }
+            }
+        },
+        "resource_options": {
+            "title": "Resource caps",
+            "type": "object",
+            "properties": {
+                "max_cpus": {
+                    "type": "integer",
+                    "default": 16
+                },
+                "max_memory": {
+                    "type": "string",
+                    "default": "128.GB"
+                },
+                "max_time": {
+                    "type": "string",
+                    "default": "48.h"
+                }
+            }
+        }
+    },
+    "allOf": [
+        {"$ref": "#/definitions/input_output_options"},
+        {"$ref": "#/definitions/reference_options"},
+        {"$ref": "#/definitions/trim_align_options"},
+        {"$ref": "#/definitions/peak_call_options"},
+        {"$ref": "#/definitions/differential_peaks_options"},
+        {"$ref": "#/definitions/reproducibility_options"},
+        {"$ref": "#/definitions/resource_options"}
+    ]
+}
