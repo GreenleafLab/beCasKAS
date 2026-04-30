@@ -1,0 +1,62 @@
+# Build the pipeline container and push to GitHub Container Registry on tagged releases.
+
+name: Build & publish container
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: ver
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+
+      - name: Compute lowercase image name (ghcr.io requires lowercase)
+        id: img
+        env:
+          REPO: ${{ github.repository }}
+        run: echo "name=ghcr.io/${REPO,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: containers/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.img.outputs.name }}:${{ steps.ver.outputs.version }}
+            ${{ steps.img.outputs.name }}:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.ver.outputs.version }}
+            org.opencontainers.image.licenses=MIT
+
+      - name: Print image digest
+        run: |
+          echo "Image digest:"
+          docker buildx imagetools inspect "${{ steps.img.outputs.name }}:${{ steps.ver.outputs.version }}" | grep Digest
+          echo
+          echo "Update nextflow.config with the digest above:"
+          echo "  process.container = '${{ steps.img.outputs.name }}@sha256:<DIGEST>'"
