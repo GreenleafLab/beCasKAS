@@ -8,7 +8,7 @@ Detects non-coding off-target base editor unwinding and editing in primary cells
 
 ### Requirements
 - [Nextflow](https://www.nextflow.io/) ≥ 24.04.0
-- All pipeline tools available on the executor's `PATH` (see [Tool dependencies](#tool-dependencies) below)
+- Pipeline tools on the executor's `PATH` (see [Tool dependencies](#tool-dependencies) — list pending)
 - ~50 GB scratch space + reference data (~30 GB for hg38 + GATK resources)
 
 ### Run
@@ -76,19 +76,11 @@ CSV with columns: `sample_id`, `fastq_1`, `fastq_2`, `condition`, `replicate`, `
 
 ## Tool dependencies
 
-Until a container image is provided, ensure these tools are on `PATH`:
-
-- [KAS-Analyzer](https://github.com/Ruitulyu/KAS-Analyzer) (and its bowtie2 transitive dep)
-- bowtie2 ≥ 2.5
-- samtools ≥ 1.21, bcftools ≥ 1.16, bedtools ≥ 2.31
-- trim-galore ≥ 0.6, cutadapt ≥ 4.9, fastqc ≥ 0.12
-- macs2 ≥ 2.2.9
-- picard ≥ 3.3, gencore ≥ 0.17
-- gatk4 ≥ 4.6
-- deeptools ≥ 3.5, ucsc-bedgraphtobigwig
-- R ≥ 4.4 with Bioconductor packages: DiffBind, DESeq2
-
-Phase-2 tools (perbase, blast, clustalo) are required only for the `5A_blast.sh`-equivalent step, which is deferred to v0.3.0+.
+> **TODO** — Pinned tool/version list pending. Until a container image is provided
+> (see [Container support](#container-support)) or this list is filled in, install
+> the tools used by each module from your distribution's package manager, conda, or
+> equivalent. Tool names are visible in each module's `script:` block under
+> [`nextflow/modules/`](nextflow/modules/).
 
 ## Pipeline structure
 
