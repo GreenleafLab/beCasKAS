@@ -8,20 +8,28 @@ Detects non-coding off-target base editor unwinding and editing in primary cells
 
 ### Requirements
 - [Nextflow](https://www.nextflow.io/) ≥ 24.04.0
-- [Apptainer](https://apptainer.org/) (HPC) **or** Docker (local)
+- All pipeline tools available on the executor's `PATH` (see [Tool dependencies](#tool-dependencies) below)
 - ~50 GB scratch space + reference data (~30 GB for hg38 + GATK resources)
 
 ### Run
 
 ```bash
 nextflow run GreenleafLab/beCasKAS -r v0.2.0 \
-    -profile apptainer \
     --samplesheet samples.csv \
     --reference_dir /path/to/hg38_refs \
     --outdir results/
 ```
 
 The pipeline does not download references — you stage them once and pass the directory.
+
+## Container support
+
+**Container distribution is not yet provided** in this release. A pre-built container
+image with the full tool stack is planned for a future release; until then, install the
+required tools locally (e.g., via conda) or build your own image and pass it via
+`-c custom.config` setting `process.container = '<your-image>'`. Apptainer / Docker /
+Singularity profiles are pre-wired in `nextflow.config` and will activate as soon as
+a container is supplied.
 
 ## Required references
 
@@ -65,6 +73,22 @@ CSV with columns: `sample_id`, `fastq_1`, `fastq_2`, `condition`, `replicate`, `
 | `condition` | yes | One of `input`, `control`, `treatment` |
 | `replicate` | yes | Replicate number within condition |
 | `control_id` | conditional | sample_id of MACS2 input control (required for control/treatment rows) |
+
+## Tool dependencies
+
+Until a container image is provided, ensure these tools are on `PATH`:
+
+- [KAS-Analyzer](https://github.com/Ruitulyu/KAS-Analyzer) (and its bowtie2 transitive dep)
+- bowtie2 ≥ 2.5
+- samtools ≥ 1.21, bcftools ≥ 1.16, bedtools ≥ 2.31
+- trim-galore ≥ 0.6, cutadapt ≥ 4.9, fastqc ≥ 0.12
+- macs2 ≥ 2.2.9
+- picard ≥ 3.3, gencore ≥ 0.17
+- gatk4 ≥ 4.6
+- deeptools ≥ 3.5, ucsc-bedgraphtobigwig
+- R ≥ 4.4 with Bioconductor packages: DiffBind, DESeq2
+
+Phase-2 tools (perbase, blast, clustalo) are required only for the `5A_blast.sh`-equivalent step, which is deferred to v0.3.0+.
 
 ## Pipeline structure
 
@@ -122,10 +146,11 @@ results/
 
 ## Reproducibility
 
-- Container image referenced **by sha256 digest** in `nextflow.config` — the exact bytes that ran are pinned.
 - Random seeds set explicitly in R (`set.seed`).
 - References are user-staged at `--reference_dir`; provenance of the staged files is the user's responsibility.
+- Tool versions captured per-run in `pipeline_info/tool_versions.tsv` (in-container/in-env tool/package versions).
 - Two runs with identical inputs and the same staged references produce bit-identical outputs (subject to bowtie2 multi-thread caveat — for strict bit-identity, pin `task.cpus = 1` for the trim_align process).
+- Container-based execution is the planned path to byte-pinned reproducibility; not provided in this release (see [Container support](#container-support)).
 
 **Note:** outputs from this pipeline may differ trivially from the original preprint figures, because random seeds were not set in the original code. The original preprint figures are reproducible only via the legacy repository at commit `d811c3a` (https://github.com/<legacy-org>/beCasKAS).
 
