@@ -5,15 +5,12 @@ nextflow.enable.dsl = 2
 
 include { validateParameters; paramsSummaryLog } from 'plugin/nf-validation'
 
-include { TRIM_ALIGN }              from './nextflow/modules/trim_align'
-include { PEAK_CALL }               from './nextflow/modules/analyze_peak_call'
-include { NORMALIZE_BIGWIG }        from './nextflow/modules/analyze_normalize_bigwig'
-include { QC_METRICS }              from './nextflow/modules/analyze_qc_metrics'
-include { KAS_STATISTICS }          from './nextflow/modules/analyze_kas_statistics'
-include { DEDUP_CONSENSUS }         from './nextflow/modules/picard_gencore_dedup'
-include { SPLIT_BAM_PSEUDOREPS }    from './nextflow/modules/split_bam_pseudoreps'
-include { DIFFERENTIAL_PEAKS }      from './nextflow/modules/differential_peaks'
-include { CALL_VARIANTS }           from './nextflow/modules/mutect2_call_variants'
+include { TRIM_ALIGN }                                                       from './nextflow/modules/trim_align'
+include { PEAK_CALL; KAS_STATISTICS; NORMALIZE_BIGWIG; QC_METRICS }          from './nextflow/modules/analyze'
+include { DEDUP_CONSENSUS }                                                  from './nextflow/modules/picard_gencore_dedup'
+include { SPLIT_BAM_PSEUDOREPS }                                             from './nextflow/modules/split_bam_pseudoreps'
+include { DIFFERENTIAL_PEAKS }                                               from './nextflow/modules/differential_peaks'
+include { CALL_VARIANTS }                                                    from './nextflow/modules/mutect2_call_variants'
 
 // Tool-version provenance: captures in-container tool/package versions that Nextflow's
 // built-in tracing (.nextflow.log, execution_trace.txt, execution_report.html) cannot see.

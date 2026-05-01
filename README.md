@@ -68,17 +68,17 @@ CSV with columns: `sample_id`, `fastq_1`, `fastq_2`, `condition`, `replicate`, `
 
 ## Pipeline structure
 
-| Stage | Module | Source script | Description |
-|---|---|---|---|
-| 1 | `trim_align` | 1_trim_align.sh / 2_align_helper.sh | trim_galore + KAS-Analyzer KAS-seq (Bowtie2, KAS-Analyzer's default aligner) |
-| 2 | `analyze_peak_call` | 3_analyze.sh | MACS2 sharp via KAS-Analyzer (treatment vs input) |
-| 3 | `analyze_normalize_bigwig` | 3_analyze.sh | RPM-ratio normalized bedGraph + UCSC bigWig |
-| 4 | `analyze_qc_metrics` | 3_analyze.sh | FRiP + multiBigwigSummary correlation |
-| 5 | `analyze_kas_statistics` | 3_analyze.sh | Cohort RPM statistics → ratios.txt |
-| 6 | `picard_gencore_dedup` | 4_picard-gencore.sh | picard MarkDuplicates + gencore consensus dedup |
-| 7 | `split_bam_pseudoreps` | (new) | (conditional) deterministic BAM partition for n=1 conditions |
-| 8 | `differential_peaks` | 5E_differential_peaks.Rmd | DiffBind (DESeq2 backend) treatment vs control contrast |
-| 9 | `mutect2_call_variants` | 6_gatk-mutect2.sh | Mutect2 tumor-only + germline + PoN, restricted to differential peaks |
+| Stage | Process | Source file | Source script | Description |
+|---|---|---|---|---|
+| 1 | `TRIM_ALIGN` | `trim_align.nf` | 1_trim_align.sh / 2_align_helper.sh | trim_galore + KAS-Analyzer KAS-seq (Bowtie2, KAS-Analyzer's default aligner) |
+| 2 | `PEAK_CALL` | `analyze.nf` | 3_analyze.sh | MACS2 sharp via KAS-Analyzer (treatment vs input) |
+| 3 | `KAS_STATISTICS` | `analyze.nf` | 3_analyze.sh | Cohort RPM statistics → ratios.txt |
+| 4 | `NORMALIZE_BIGWIG` | `analyze.nf` | 3_analyze.sh | RPM-ratio normalized bedGraph + UCSC bigWig |
+| 5 | `QC_METRICS` | `analyze.nf` | 3_analyze.sh | FRiP + multiBigwigSummary correlation |
+| 6 | `DEDUP_CONSENSUS` | `picard_gencore_dedup.nf` | 4_picard-gencore.sh | picard MarkDuplicates + gencore consensus dedup |
+| 7 | `SPLIT_BAM_PSEUDOREPS` | `split_bam_pseudoreps.nf` | (new) | (conditional) deterministic BAM partition for n=1 conditions |
+| 8 | `DIFFERENTIAL_PEAKS` | `differential_peaks.nf` | 5E_differential_peaks.Rmd | DiffBind (DESeq2 backend) treatment vs control contrast |
+| 9 | `CALL_VARIANTS` | `mutect2_call_variants.nf` | 6_gatk-mutect2.sh | Mutect2 tumor-only + germline + PoN, restricted to differential peaks |
 
 ## Replicate handling
 
