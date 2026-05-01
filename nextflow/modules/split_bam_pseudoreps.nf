@@ -2,13 +2,13 @@
 
 process SPLIT_BAM_PSEUDOREPS {
 
-    tag "${meta.id}"
+    tag "${sample.id}"
 
     input:
-    tuple val(meta), path(bam), path(bai)
+    tuple val(sample), path(bam), path(bai)
 
     output:
-    tuple val(meta), path("${meta.id}_pseudo*.bam"), path("${meta.id}_pseudo*.bam.bai"), emit: pseudoreps
+    tuple val(sample), path("${sample.id}_pseudo*.bam"), path("${sample.id}_pseudo*.bam.bai"), emit: pseudoreps
 
     script:
     """
@@ -16,7 +16,7 @@ process SPLIT_BAM_PSEUDOREPS {
 
     ${projectDir}/nextflow/bin/split_bam_pseudoreps.py \\
         --input ${bam} \\
-        --output-prefix ${meta.id} \\
+        --output-prefix ${sample.id} \\
         --n-buckets ${params.n_pseudo_replicates} \\
         --seed ${params.seed}
     """

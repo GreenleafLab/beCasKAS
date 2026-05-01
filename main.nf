@@ -99,20 +99,20 @@ workflow {
     Channel
         .fromSamplesheet('samplesheet', skip_duplicate_check: false)
         .map { row ->
-            def meta = [
+            def sample = [
                 id:         row.sample_id,
                 condition:  row.condition,
                 replicate:  row.replicate,
                 control_id: row.control_id ?: ''
             ]
-            tuple(meta, file(row.fastq_1), file(row.fastq_2))
+            tuple(sample, file(row.fastq_1), file(row.fastq_2))
         }
         .set { ch_samples }
 
     // Per-condition replicate counts (drives pseudo-rep dispatch later)
     ch_samples
-        .filter { meta, r1, r2 -> meta.condition != 'input' }
-        .map { meta, r1, r2 -> meta.condition }
+        .filter { sample, r1, r2 -> sample.condition != 'input' }
+        .map { sample, r1, r2 -> sample.condition }
         .reduce([:]) { acc, cond -> acc[cond] = (acc[cond] ?: 0) + 1; acc }
         .set { ch_replicate_counts }
 
@@ -121,34 +121,34 @@ workflow {
 
     // 5. Build channels for downstream modules
 
-    // Per-sample BAM/BED/BG channels (joined by meta)
-    ch_bam = TRIM_ALIGN.out.bam     // tuple(meta, sorted.bam)
-    ch_bed = TRIM_ALIGN.out.bed     // tuple(meta, .bed)
-    ch_bg  = TRIM_ALIGN.out.bg      // tuple(meta, .bg)
+    // Per-sample BAM/BED/BG channels (joined by sample)
+    ch_bam = TRIM_ALIGN.out.bam     // tuple(sample, sorted.bam)
+    ch_bed = TRIM_ALIGN.out.bed     // tuple(sample, .bed)
+    ch_bg  = TRIM_ALIGN.out.bg      // tuple(sample, .bg)
 
     // 6. Peak calling — non-input samples paired with their control_id BED
-    ch_bed_by_id = ch_bed.map { meta, bed -> [meta.id, meta, bed] }
+    ch_bed_by_id = ch_bed.map { sample, bed -> [sample.id, sample, bed] }
     ch_bed_for_peaks = ch_bed_by_id
-        .filter { id, meta, bed -> meta.condition != 'input' }
-        .map { id, meta, bed -> [meta.control_id, meta, bed] }
-        .combine(ch_bed_by_id.map { id, meta, bed -> [id, bed] }, by: 0)
-        .map { ctrl_id, sample_meta, sample_bed, ctrl_bed -> tuple(sample_meta, sample_bed, ctrl_bed) }
+        .filter { id, sample, bed -> sample.condition != 'input' }
+        .map { id, sample, bed -> [sample.control_id, sample, bed] }
+        .combine(ch_bed_by_id.map { id, sample, bed -> [id, bed] }, by: 0)
+        .map { ctrl_id, sample, sample_bed, ctrl_bed -> tuple(sample, sample_bed, ctrl_bed) }
 
     PEAK_CALL(ch_bed_for_peaks, 'hg38')
 
     // 7a. Cohort-level RPM ratio computation (verbatim awk from 3_analyze.sh:74-96)
     // Collect per-sample Summary/ dirs from TRIM_ALIGN, run KAS-Analyzer statistics, awk → ratios.txt
-    ch_summaries = TRIM_ALIGN.out.summary.collect { meta, summary -> summary }
-    ch_summary_labels = TRIM_ALIGN.out.summary.collect { meta, summary -> meta.id }
+    ch_summaries = TRIM_ALIGN.out.summary.collect { sample, summary -> summary }
+    ch_summary_labels = TRIM_ALIGN.out.summary.collect { sample, summary -> sample.id }
 
     KAS_STATISTICS(ch_summaries, ch_summary_labels)
 
     // 7b. Normalization
-    ch_bg.collect { meta, bg -> bg }.set { all_bg }
+    ch_bg.collect { sample, bg -> bg }.set { all_bg }
     NORMALIZE_BIGWIG(all_bg, KAS_STATISTICS.out.ratios, KAS_STATISTICS.out.labels, 'hg38')
 
     // 8. QC metrics — non-input only (matches original)
-    ch_bed_noninput = ch_bed.filter { meta, bed -> meta.condition != 'input' }
+    ch_bed_noninput = ch_bed.filter { sample, bed -> sample.condition != 'input' }
     ch_peaks_for_qc = PEAK_CALL.out.peaks_abridged   // headerless BED for FRiP (bedtools-based)
     ch_bigwigs_for_qc = NORMALIZE_BIGWIG.out.bigwigs.flatten().filter {
         // exclude input samples' bigwigs from correlation
@@ -156,26 +156,26 @@ workflow {
     }
 
     QC_METRICS(
-        ch_bed_noninput.collect { m, b -> b },
-        ch_peaks_for_qc.collect { m, p -> p },
+        ch_bed_noninput.collect { sample, bed -> bed },
+        ch_peaks_for_qc.collect { sample, peaks -> peaks },
         ch_bigwigs_for_qc.collect(),
-        ch_bed_noninput.collect { m, b -> m.id }
+        ch_bed_noninput.collect { sample, bed -> sample.id }
     )
 
     // 9. Dedup — non-input only
-    ch_bam_noninput = ch_bam.filter { meta, bam -> meta.condition != 'input' }
+    ch_bam_noninput = ch_bam.filter { sample, bam -> sample.condition != 'input' }
     DEDUP_CONSENSUS(ch_bam_noninput, fasta, fasta_fai)
 
     // 10. Pseudo-rep dispatch: per condition, if n=1, split that sample's BAM into 3 pseudo-reps
     ch_dedup = DEDUP_CONSENSUS.out.bam.join(DEDUP_CONSENSUS.out.bai)
-        // tuple(meta, dedup_bam, dedup_bai)
+        // tuple(sample, dedup_bam, dedup_bai)
 
-    // Build a map condition → list of (meta, bam, bai) entries
-    ch_dedup_by_cond = ch_dedup.map { meta, bam, bai -> [meta.condition, meta, bam, bai] }
+    // Build a map condition → list of (sample, bam, bai) entries
+    ch_dedup_by_cond = ch_dedup.map { sample, bam, bai -> [sample.condition, sample, bam, bai] }
 
     // Group by condition; if size==1 → split; else pass through as-is
     ch_dedup_by_cond
-        .groupTuple()    // [cond, [meta...], [bam...], [bai...]]
+        .groupTuple()    // [cond, [sample...], [bam...], [bai...]]
         .branch {
             single:    it[1].size() == 1
             multi:     it[1].size() >= 2
@@ -202,14 +202,14 @@ workflow {
     // Build the unified samplesheet for DIFFERENTIAL_PEAKS:
     //   each row has sample_id, condition, replicate, bam_path, peaks_path
     //   pseudo-reps get synthesized rows (sample_id = original + "_pseudoN")
-    ch_real_reps_for_diff = ch_real_reps.map { meta, bam, bai ->
-        [meta.id, meta.condition, meta.replicate, bam.toString()]
+    ch_real_reps_for_diff = ch_real_reps.map { sample, bam, bai ->
+        [sample.id, sample.condition, sample.replicate, bam.toString()]
     }
 
     SPLIT_BAM_PSEUDOREPS.out.pseudoreps
-        .flatMap { meta, bams, bais ->
+        .flatMap { sample, bams, bais ->
             (0..<bams.size()).collect { i ->
-                [meta.id + "_pseudo${i+1}", meta.condition, i+1, bams[i].toString()]
+                [sample.id + "_pseudo${i+1}", sample.condition, i+1, bams[i].toString()]
             }
         }
         .set { ch_pseudo_for_diff }
@@ -218,7 +218,7 @@ workflow {
     ch_diff_rows = ch_real_reps_for_diff.mix(ch_pseudo_for_diff)
 
     PEAK_CALL.out.peaks
-        .map { meta, peaks -> [meta.id, peaks.toString()] }
+        .map { sample, peaks -> [sample.id, peaks.toString()] }
         .set { ch_peaks_by_id }
 
     // Build samplesheet TSV (one row per BAM, joined to peaks)

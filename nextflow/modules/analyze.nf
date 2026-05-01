@@ -10,16 +10,16 @@
 
 process PEAK_CALL {
 
-    tag "${meta.id}"
+    tag "${sample.id}"
 
     input:
-    tuple val(meta), path(sample_bed), path(control_bed)
+    tuple val(sample), path(sample_bed), path(control_bed)
     val genome_name
 
     output:
-    tuple val(meta), path("${meta.id}_input_macs2_peaks.bed"),          emit: peaks
-    tuple val(meta), path("${meta.id}_input_macs2_peaks_abridged.bed"), emit: peaks_abridged
-    tuple val(meta), path("${meta.id}_input_peaks.xls"),                emit: macs2_xls
+    tuple val(sample), path("${sample.id}_input_macs2_peaks.bed"),          emit: peaks
+    tuple val(sample), path("${sample.id}_input_macs2_peaks_abridged.bed"), emit: peaks_abridged
+    tuple val(sample), path("${sample.id}_input_peaks.xls"),                emit: macs2_xls
 
     script:
     """
@@ -29,14 +29,14 @@ process PEAK_CALL {
         -t ${sample_bed} \\
         -c ${control_bed} \\
         -b ${params.macs2_mode} \\
-        -o ${meta.id}_input \\
+        -o ${sample.id}_input \\
         -g ${genome_name}
 
     # Strip MACS2 xls comment lines + blank rows → headered BED (used by DiffBind)
-    awk '!/^#/ && NF' ${meta.id}_input_peaks.xls > ${meta.id}_input_macs2_peaks.bed
+    awk '!/^#/ && NF' ${sample.id}_input_peaks.xls > ${sample.id}_input_macs2_peaks.bed
 
     # Strip the column-header line → pure BED (used by FRiP / bedtools)
-    awk 'NR > 1' ${meta.id}_input_macs2_peaks.bed > ${meta.id}_input_macs2_peaks_abridged.bed
+    awk 'NR > 1' ${sample.id}_input_macs2_peaks.bed > ${sample.id}_input_macs2_peaks_abridged.bed
     """
 }
 

@@ -4,18 +4,18 @@
 
 process TRIM_ALIGN {
 
-    tag "${meta.id}"
+    tag "${sample.id}"
 
     input:
-    tuple val(meta), path(r1), path(r2)
+    tuple val(sample), path(r1), path(r2)
     path bowtie2_index_dir       // contains hg38_Bowtie2Index/hg38.{1-4,rev.1,rev.2}.bt2
 
     output:
-    tuple val(meta), path("${meta.id}/Bam_files/${meta.id}_sorted.bam"),     emit: bam
-    tuple val(meta), path("${meta.id}/Bam_files/${meta.id}_sorted.bam.bai"), emit: bai
-    tuple val(meta), path("${meta.id}/Bed_files/${meta.id}.bed"),            emit: bed
-    tuple val(meta), path("${meta.id}/BedGraph_files/${meta.id}.bg"),        emit: bg
-    tuple val(meta), path("${meta.id}/Summary/*"),                           emit: summary, optional: true
+    tuple val(sample), path("${sample.id}/Bam_files/${sample.id}_sorted.bam"),     emit: bam
+    tuple val(sample), path("${sample.id}/Bam_files/${sample.id}_sorted.bam.bai"), emit: bai
+    tuple val(sample), path("${sample.id}/Bed_files/${sample.id}.bed"),            emit: bed
+    tuple val(sample), path("${sample.id}/BedGraph_files/${sample.id}.bg"),        emit: bg
+    tuple val(sample), path("${sample.id}/Summary/*"),                           emit: summary, optional: true
     path("*_fastqc.{zip,html}"),                                             emit: fastqc, optional: true
 
     script:
@@ -26,12 +26,12 @@ process TRIM_ALIGN {
     R1=${r1}
     R2=${r2}
     if [[ "\$R1" == *.gz ]]; then
-        gunzip -c \$R1 > ${meta.id}_R1.fastq
-        R1=${meta.id}_R1.fastq
+        gunzip -c \$R1 > ${sample.id}_R1.fastq
+        R1=${sample.id}_R1.fastq
     fi
     if [[ "\$R2" == *.gz ]]; then
-        gunzip -c \$R2 > ${meta.id}_R2.fastq
-        R2=${meta.id}_R2.fastq
+        gunzip -c \$R2 > ${sample.id}_R2.fastq
+        R2=${sample.id}_R2.fastq
     fi
 
     # Trim with trim_galore; --fastqc enables FastQC reports on both raw and trimmed reads
@@ -42,6 +42,6 @@ process TRIM_ALIGN {
     R2_TRIM=\$(basename \$R2 .fastq)_val_2.fq
 
     # KAS-seq align: -i takes the bowtie2 INDEX PREFIX (not a directory); -s is the assembly id literal "hg38"
-    KAS-Analyzer KAS-seq -t ${task.cpus} -i ${bowtie2_index_dir}/hg38_Bowtie2Index/hg38 -o ${meta.id} -s hg38 -1 \$R1_TRIM -2 \$R2_TRIM
+    KAS-Analyzer KAS-seq -t ${task.cpus} -i ${bowtie2_index_dir}/hg38_Bowtie2Index/hg38 -o ${sample.id} -s hg38 -1 \$R1_TRIM -2 \$R2_TRIM
     """
 }

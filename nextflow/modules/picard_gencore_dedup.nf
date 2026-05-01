@@ -2,17 +2,17 @@
 
 process DEDUP_CONSENSUS {
 
-    tag "${meta.id}"
+    tag "${sample.id}"
 
     input:
-    tuple val(meta), path(sorted_bam)
+    tuple val(sample), path(sorted_bam)
     path fasta
     path fasta_fai
 
     output:
-    tuple val(meta), path("${meta.id}_picard-gencore-dedup.bam"),     emit: bam
-    tuple val(meta), path("${meta.id}_picard-gencore-dedup.bam.bai"), emit: bai
-    tuple val(meta), path("${meta.id}_picard-gencore-dedup.html"),    emit: html
+    tuple val(sample), path("${sample.id}_picard-gencore-dedup.bam"),     emit: bam
+    tuple val(sample), path("${sample.id}_picard-gencore-dedup.bam.bai"), emit: bai
+    tuple val(sample), path("${sample.id}_picard-gencore-dedup.html"),    emit: html
 
     script:
     """
@@ -21,7 +21,7 @@ process DEDUP_CONSENSUS {
     # Add default read group (picard requires it for downstream tools)
     picard AddOrReplaceReadGroups \\
         I=${sorted_bam} \\
-        O=${meta.id}_sorted_rg.bam \\
+        O=${sample.id}_sorted_rg.bam \\
         RGID=4 \\
         RGLB=lib1 \\
         RGPL=ILLUMINA \\
@@ -30,18 +30,18 @@ process DEDUP_CONSENSUS {
 
     # Mark duplicates
     picard MarkDuplicates \\
-        I=${meta.id}_sorted_rg.bam \\
-        O=${meta.id}_marked.bam \\
-        M=${meta.id}_marked_metrics.txt
+        I=${sample.id}_sorted_rg.bam \\
+        O=${sample.id}_marked.bam \\
+        M=${sample.id}_marked_metrics.txt
 
     # Consensus dedup via gencore
-    gencore -i ${meta.id}_marked.bam \\
-        -o ${meta.id}_picard-gencore-dedup.bam \\
+    gencore -i ${sample.id}_marked.bam \\
+        -o ${sample.id}_picard-gencore-dedup.bam \\
         -r ${fasta} \\
-        --html ${meta.id}_picard-gencore-dedup.html
+        --html ${sample.id}_picard-gencore-dedup.html
 
-    samtools index ${meta.id}_picard-gencore-dedup.bam ${meta.id}_picard-gencore-dedup.bam.bai
+    samtools index ${sample.id}_picard-gencore-dedup.bam ${sample.id}_picard-gencore-dedup.bam.bai
 
-    rm ${meta.id}_sorted_rg.bam ${meta.id}_marked.bam
+    rm ${sample.id}_sorted_rg.bam ${sample.id}_marked.bam
     """
 }
