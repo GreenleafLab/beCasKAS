@@ -185,8 +185,8 @@ workflow {
 
     // Single-rep conditions → SPLIT_BAM_PSEUDOREPS
     ch_branched.single
-        .map { cond, metas, bams, bais ->
-            tuple(metas[0], bams[0], bais[0])
+        .map { cond, samples, bams, bais ->
+            tuple(samples[0], bams[0], bais[0])
         }
         .set { ch_to_split }
 
@@ -194,8 +194,8 @@ workflow {
 
     // Multi-rep conditions → flatten back to per-sample tuples
     ch_branched.multi
-        .flatMap { cond, metas, bams, bais ->
-            (0..<metas.size()).collect { i -> tuple(metas[i], bams[i], bais[i]) }
+        .flatMap { cond, samples, bams, bais ->
+            (0..<samples.size()).collect { i -> tuple(samples[i], bams[i], bais[i]) }
         }
         .set { ch_real_reps }
 
