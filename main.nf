@@ -1,6 +1,4 @@
 #!/usr/bin/env nextflow
-// main.nf — beCasKAS pipeline entry point
-
 nextflow.enable.dsl = 2
 
 include { validateParameters; paramsSummaryLog } from 'plugin/nf-validation'
@@ -12,9 +10,7 @@ include { SPLIT_BAM_PSEUDOREPS }                                             fro
 include { DIFFERENTIAL_PEAKS }                                               from './nextflow/modules/differential_peaks'
 include { CALL_VARIANTS }                                                    from './nextflow/modules/mutect2_call_variants'
 
-// Tool-version provenance: captures in-container tool/package versions that Nextflow's
-// built-in tracing (execution_trace.txt, execution_report.html) cannot see.
-// Output is emitted to stdout and logged into .nextflow.log via the workflow handler.
+// Output tool versions for nextflow.log
 process TOOL_VERSIONS {
 
     output:
@@ -53,32 +49,32 @@ process BUILD_DIFFBIND_SAMPLESHEET {
     script:
     """
     python3 - <<'PYEOF' > diffbind_samplesheet.csv
-import csv, sys
+    import csv, sys
 
-rows = ${groovy.json.JsonOutput.toJson(rows)}
-peaks_map = dict([(p[0], p[1]) for p in ${groovy.json.JsonOutput.toJson(peaks_map)}])
+    rows = ${groovy.json.JsonOutput.toJson(rows)}
+    peaks_map = dict([(p[0], p[1]) for p in ${groovy.json.JsonOutput.toJson(peaks_map)}])
 
-writer = csv.writer(sys.stdout)
-writer.writerow(['sample_id', 'condition', 'replicate', 'bam_path', 'peaks_path'])
-for r in rows:
-    sid, cond, rep, bam = r
-    # Pseudo-rep IDs look like "X_pseudo1"; their peaks are the parent's
-    parent = sid.split('_pseudo')[0]
-    peaks = peaks_map.get(sid) or peaks_map.get(parent) or ''
-    writer.writerow([sid, cond, rep, bam, peaks])
-PYEOF
+    writer = csv.writer(sys.stdout)
+    writer.writerow(['sample_id', 'condition', 'replicate', 'bam_path', 'peaks_path'])
+    for r in rows:
+        sid, cond, rep, bam = r
+        # Pseudo-rep IDs look like "X_pseudo1"; their peaks are the parent's
+        parent = sid.split('_pseudo')[0]
+        peaks = peaks_map.get(sid) or peaks_map.get(parent) or ''
+        writer.writerow([sid, cond, rep, bam, peaks])
+    PYEOF
     """
 }
 
 workflow {
 
-    // 1. Validate params
+    // Validate params
     validateParameters(parameters_schema: 'nextflow/configs/nextflow_schema.json')
     log.info paramsSummaryLog(workflow, parameters_schema: 'nextflow/configs/nextflow_schema.json')
     TOOL_VERSIONS()
     TOOL_VERSIONS.out.subscribe { v -> log.info "Tool versions for this run:\n${v.trim()}" }
 
-    // 2. Resolve references from --reference_dir (user-staged directory)
+    // Get references from --reference_dir
     if (!params.reference_dir) {
         error("Missing required --reference_dir. See README for required layout.")
     }
@@ -86,13 +82,15 @@ workflow {
     def fasta         = file("${ref_dir}/hg38.fasta",                       checkIfExists: true)
     def fasta_fai     = file("${ref_dir}/hg38.fasta.fai",                   checkIfExists: true)
     def fasta_dict    = file("${ref_dir}/hg38.dict",                        checkIfExists: true)
-    def bowtie2_index = file("${ref_dir}/hg38_Bowtie2Index",                checkIfExists: true)
+    // bowtie2 index files (hg38.{1,2,3,4,rev.1,rev.2}.bt2) live flat in ref_dir alongside the FASTA;
+    // verify a representative one to catch missing index early
+    file("${ref_dir}/hg38.1.bt2",                                           checkIfExists: true)
     def gnomad        = file("${ref_dir}/af-only-gnomad.hg38.vcf.gz",       checkIfExists: true)
     def gnomad_tbi    = file("${ref_dir}/af-only-gnomad.hg38.vcf.gz.tbi",   checkIfExists: true)
     def pon           = file("${ref_dir}/1000g_pon.hg38.vcf.gz",            checkIfExists: true)
     def pon_tbi       = file("${ref_dir}/1000g_pon.hg38.vcf.gz.tbi",        checkIfExists: true)
 
-    // 3. Parse samplesheet → channels
+    // Parse samplesheet
     Channel
         .fromSamplesheet('samplesheet', skip_duplicate_check: false)
         .map { row ->
@@ -106,49 +104,41 @@ workflow {
         }
         .set { ch_samples }
 
-    // Per-condition replicate counts (drives pseudo-rep dispatch later)
+    // Per-condition replicate counts
     ch_samples
         .filter { sample, r1, r2 -> sample.condition != 'input' }
         .map { sample, r1, r2 -> sample.condition }
         .reduce([:]) { acc, cond -> acc[cond] = (acc[cond] ?: 0) + 1; acc }
         .set { ch_replicate_counts }
 
-    // 4. trim_align — every sample
+    // Trim and align
     TRIM_ALIGN(ch_samples, file(ref_dir))
+    ch_bam = TRIM_ALIGN.out.bam
+    ch_bed = TRIM_ALIGN.out.bed
+    ch_bg  = TRIM_ALIGN.out.bg
 
-    // 5. Build channels for downstream modules
-
-    // Per-sample BAM/BED/BG channels (joined by sample)
-    ch_bam = TRIM_ALIGN.out.bam     // tuple(sample, sorted.bam)
-    ch_bed = TRIM_ALIGN.out.bed     // tuple(sample, .bed)
-    ch_bg  = TRIM_ALIGN.out.bg      // tuple(sample, .bg)
-
-    // 6. Peak calling — non-input samples paired with their control_id BED
+    // Peak calling
     ch_bed_by_id = ch_bed.map { sample, bed -> [sample.id, sample, bed] }
     ch_bed_for_peaks = ch_bed_by_id
         .filter { id, sample, bed -> sample.condition != 'input' }
         .map { id, sample, bed -> [sample.control_id, sample, bed] }
         .combine(ch_bed_by_id.map { id, sample, bed -> [id, bed] }, by: 0)
         .map { ctrl_id, sample, sample_bed, ctrl_bed -> tuple(sample, sample_bed, ctrl_bed) }
-
     PEAK_CALL(ch_bed_for_peaks, 'hg38')
 
-    // 7a. Cohort-level RPM ratio computation (verbatim awk from 3_analyze.sh:74-96)
-    // Collect per-sample Summary/ dirs from TRIM_ALIGN, run KAS-Analyzer statistics, awk → ratios.txt
+    // Cohort-level RPM ratio computation
     ch_summaries = TRIM_ALIGN.out.summary.collect { sample, summary -> summary }
     ch_summary_labels = TRIM_ALIGN.out.summary.collect { sample, summary -> sample.id }
-
     KAS_STATISTICS(ch_summaries, ch_summary_labels)
 
-    // 7b. Normalization
+    // 7Normalization
     ch_bg.collect { sample, bg -> bg }.set { all_bg }
     NORMALIZE_BIGWIG(all_bg, KAS_STATISTICS.out.ratios, KAS_STATISTICS.out.labels, 'hg38')
 
-    // 8. QC metrics — non-input only (matches original)
+    // 8. QC metrics -- non-input only (matches original)
     ch_bed_noninput = ch_bed.filter { sample, bed -> sample.condition != 'input' }
-    ch_peaks_for_qc = PEAK_CALL.out.peaks_abridged   // headerless BED for FRiP (bedtools-based)
+    ch_peaks_for_qc = PEAK_CALL.out.peaks_abridged
     ch_bigwigs_for_qc = NORMALIZE_BIGWIG.out.bigwigs.flatten().filter {
-        // exclude input samples' bigwigs from correlation
         true   // TODO: filter by sample id once channels are joined
     }
 
@@ -159,20 +149,15 @@ workflow {
         ch_bed_noninput.collect { sample, bed -> sample.id }
     )
 
-    // 9. Dedup — non-input only
+    // Deduplicate
     ch_bam_noninput = ch_bam.filter { sample, bam -> sample.condition != 'input' }
     DEDUP_CONSENSUS(ch_bam_noninput, fasta, fasta_fai)
 
-    // 10. Pseudo-rep dispatch: per condition, if n=1, split that sample's BAM into 3 pseudo-reps
+    // 10. Pseudo-replicate generation (split BAM into 3 pseudo-reps if n=1)
     ch_dedup = DEDUP_CONSENSUS.out.bam.join(DEDUP_CONSENSUS.out.bai)
-        // tuple(sample, dedup_bam, dedup_bai)
-
-    // Build a map condition → list of (sample, bam, bai) entries
     ch_dedup_by_cond = ch_dedup.map { sample, bam, bai -> [sample.condition, sample, bam, bai] }
-
-    // Group by condition; if size==1 → split; else pass through as-is
     ch_dedup_by_cond
-        .groupTuple()    // [cond, [sample...], [bam...], [bai...]]
+        .groupTuple()
         .branch {
             single:    it[1].size() == 1
             multi:     it[1].size() >= 2
@@ -180,16 +165,15 @@ workflow {
         }
         .set { ch_branched }
 
-    // Single-rep conditions → SPLIT_BAM_PSEUDOREPS
+    // Single-rep conditions
     ch_branched.single
         .map { cond, samples, bams, bais ->
             tuple(samples[0], bams[0], bais[0])
         }
         .set { ch_to_split }
-
     SPLIT_BAM_PSEUDOREPS(ch_to_split)
 
-    // Multi-rep conditions → flatten back to per-sample tuples
+    // Multi-rep conditions
     ch_branched.multi
         .flatMap { cond, samples, bams, bais ->
             (0..<samples.size()).collect { i -> tuple(samples[i], bams[i], bais[i]) }
@@ -197,12 +181,9 @@ workflow {
         .set { ch_real_reps }
 
     // Build the unified samplesheet for DIFFERENTIAL_PEAKS:
-    //   each row has sample_id, condition, replicate, bam_path, peaks_path
-    //   pseudo-reps get synthesized rows (sample_id = original + "_pseudoN")
     ch_real_reps_for_diff = ch_real_reps.map { sample, bam, bai ->
         [sample.id, sample.condition, sample.replicate, bam.toString()]
     }
-
     SPLIT_BAM_PSEUDOREPS.out.pseudoreps
         .flatMap { sample, bams, bais ->
             (0..<bams.size()).collect { i ->
@@ -223,13 +204,11 @@ workflow {
         ch_diff_rows.collect(),
         ch_peaks_by_id.collect()
     )
-        .set { ch_diff_samplesheet }
-
+    .set { ch_diff_samplesheet }
     DIFFERENTIAL_PEAKS(ch_diff_samplesheet)
 
-    // 11. call_variants — per non-input sample, intersected with cohort differential_peaks.bed
+    // Call Variants
     ch_dedup_for_variants = DEDUP_CONSENSUS.out.bam.join(DEDUP_CONSENSUS.out.bai)
-
     CALL_VARIANTS(
         ch_dedup_for_variants,
         DIFFERENTIAL_PEAKS.out.bed,

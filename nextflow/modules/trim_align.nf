@@ -8,7 +8,7 @@ process TRIM_ALIGN {
 
     input:
     tuple val(sample), path(r1), path(r2)
-    path bowtie2_index_dir       // contains hg38_Bowtie2Index/hg38.{1-4,rev.1,rev.2}.bt2
+    path reference_dir            // flat dir containing hg38.{1-4,rev.1,rev.2}.bt2 alongside hg38.fasta and other refs
 
     output:
     tuple val(sample), path("${sample.id}/Bam_files/${sample.id}_sorted.bam"),     emit: bam
@@ -42,6 +42,6 @@ process TRIM_ALIGN {
     R2_TRIM=\$(basename \$R2 .fastq)_val_2.fq
 
     # KAS-seq align: -i takes the bowtie2 INDEX PREFIX (not a directory); -s is the assembly id literal "hg38"
-    KAS-Analyzer KAS-seq -t ${task.cpus} -i ${bowtie2_index_dir}/hg38_Bowtie2Index/hg38 -o ${sample.id} -s hg38 -1 \$R1_TRIM -2 \$R2_TRIM
+    KAS-Analyzer KAS-seq -t ${task.cpus} -i ${reference_dir}/hg38 -o ${sample.id} -s hg38 -1 \$R1_TRIM -2 \$R2_TRIM
     """
 }

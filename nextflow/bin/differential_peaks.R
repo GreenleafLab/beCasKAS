@@ -1,7 +1,5 @@
 #!/usr/bin/env Rscript
 # Reproduces 5E_differential_peaks.Rmd as a parameterized CLI script.
-# Adds: explicit set.seed, CLI args, programmatic DiffBind samplesheet construction,
-# regime metadata output. Computation identical to the original Rmd.
 
 suppressPackageStartupMessages({
     library(optparse)
@@ -10,7 +8,6 @@ suppressPackageStartupMessages({
 # ---------- Helper functions (testable) ----------
 
 #' Build a DiffBind-format sample sheet from the pipeline samplesheet.
-#' Excludes input rows; maps column names DiffBind expects.
 build_diffbind_samplesheet <- function(pipeline_ss) {
     keep <- pipeline_ss$condition %in% c("control", "treatment")
     ss <- pipeline_ss[keep, , drop = FALSE]
@@ -25,7 +22,7 @@ build_diffbind_samplesheet <- function(pipeline_ss) {
     )
 }
 
-#' Apply original code's Fold > lfc_cutoff AND FDR < fdr_cutoff filter.
+#' Apply Fold > lfc_cutoff AND FDR < fdr_cutoff filter.
 filter_significant_peaks <- function(report, fdr_cutoff, lfc_cutoff) {
     keep <- report$Fold > lfc_cutoff & report$FDR < fdr_cutoff
     report[keep, , drop = FALSE]
@@ -38,11 +35,11 @@ write_method_metadata <- function(path, replicate_counts, n_pseudo, seed, fdr, l
         n <- replicate_counts[[cond]]
         if (n == 1) {
             lines <- c(lines, sprintf(
-                "%s: 1 sample → %d pseudo-replicates (auto-split, seed=%d)",
+                "%s: 1 sample -> %d pseudo-replicates (auto-split, seed=%d)",
                 cond, n_pseudo, seed))
         } else {
             lines <- c(lines, sprintf(
-                "%s: %d samples → real biological replicates", cond, n))
+                "%s: %d samples -> real biological replicates", cond, n))
         }
     }
     lines <- c(lines, "",
@@ -51,8 +48,6 @@ write_method_metadata <- function(path, replicate_counts, n_pseudo, seed, fdr, l
                sprintf("Random seed: %d", seed))
     writeLines(lines, path)
 }
-
-# ---------- CLI entry point ----------
 
 if (sys.nframe() == 0L && !interactive()) {
 
