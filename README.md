@@ -140,7 +140,7 @@ results/
 
 - Random seeds set explicitly in R (`set.seed`).
 - References are user-staged at `--reference_dir`; provenance of the staged files is the user's responsibility.
-- Tool versions captured per-run in `pipeline_info/tool_versions.tsv` (in-container/in-env tool/package versions).
+- Tool versions captured per-run at workflow start, written to `.nextflow.log` (look for the `Tool versions for this run:` block).
 - Two runs with identical inputs and the same staged references produce bit-identical outputs (subject to bowtie2 multi-thread caveat — for strict bit-identity, pin `task.cpus = 1` for the trim_align process).
 - Container-based execution is the planned path to byte-pinned reproducibility; not provided in this release (see [Container support](#container-support)).
 

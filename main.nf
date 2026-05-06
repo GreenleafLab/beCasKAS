@@ -13,35 +13,31 @@ include { DIFFERENTIAL_PEAKS }                                               fro
 include { CALL_VARIANTS }                                                    from './nextflow/modules/mutect2_call_variants'
 
 // Tool-version provenance: captures in-container tool/package versions that Nextflow's
-// built-in tracing (.nextflow.log, execution_trace.txt, execution_report.html) cannot see.
-// Output published to ${params.outdir}/pipeline_info/tool_versions.tsv.
+// built-in tracing (execution_trace.txt, execution_report.html) cannot see.
+// Output is emitted to stdout and logged into .nextflow.log via the workflow handler.
 process TOOL_VERSIONS {
 
-    publishDir "${params.outdir}/pipeline_info", mode: 'copy'
-
     output:
-    path 'tool_versions.tsv'
+    stdout
 
     script:
     """
     set -euo pipefail
-    {
-        echo -e "tool\\tversion"
-        echo -e "trim_galore\\t\$(trim_galore --version | grep -i 'version' | awk '{print \$NF}')"
-        echo -e "bowtie2\\t\$(bowtie2 --version | head -1 | awk '{print \$NF}')"
-        echo -e "samtools\\t\$(samtools --version | head -1 | awk '{print \$NF}')"
-        echo -e "macs2\\t\$(macs2 --version 2>&1 | awk '{print \$NF}')"
-        echo -e "picard\\t\$(picard MarkDuplicates --version 2>&1 | head -1)"
-        echo -e "gencore\\t\$(gencore --version 2>&1 | head -1 | awk '{print \$NF}')"
-        echo -e "gatk\\t\$(gatk --version | head -1 | awk '{print \$NF}')"
-        echo -e "bcftools\\t\$(bcftools --version | head -1 | awk '{print \$NF}')"
-        echo -e "bedtools\\t\$(bedtools --version | awk '{print \$NF}')"
-        echo -e "deeptools\\t\$(multiBigwigSummary --version 2>&1 | awk '{print \$NF}')"
-        echo -e "R\\t\$(R --version | head -1 | awk '{print \$3}')"
-        echo -e "DiffBind\\t\$(Rscript -e 'cat(as.character(packageVersion(\\"DiffBind\\")))')"
-        echo -e "DESeq2\\t\$(Rscript -e 'cat(as.character(packageVersion(\\"DESeq2\\")))')"
-        echo -e "KAS-Analyzer\\t1.0"
-    } > tool_versions.tsv
+    echo -e "tool\\tversion"
+    echo -e "trim_galore\\t\$(trim_galore --version | grep -i 'version' | awk '{print \$NF}')"
+    echo -e "bowtie2\\t\$(bowtie2 --version | head -1 | awk '{print \$NF}')"
+    echo -e "samtools\\t\$(samtools --version | head -1 | awk '{print \$NF}')"
+    echo -e "macs2\\t\$(macs2 --version 2>&1 | awk '{print \$NF}')"
+    echo -e "picard\\t\$(picard MarkDuplicates --version 2>&1 | head -1)"
+    echo -e "gencore\\t\$(gencore --version 2>&1 | head -1 | awk '{print \$NF}')"
+    echo -e "gatk\\t\$(gatk --version | head -1 | awk '{print \$NF}')"
+    echo -e "bcftools\\t\$(bcftools --version | head -1 | awk '{print \$NF}')"
+    echo -e "bedtools\\t\$(bedtools --version | awk '{print \$NF}')"
+    echo -e "deeptools\\t\$(multiBigwigSummary --version 2>&1 | awk '{print \$NF}')"
+    echo -e "R\\t\$(R --version | head -1 | awk '{print \$3}')"
+    echo -e "DiffBind\\t\$(Rscript -e 'cat(as.character(packageVersion(\\"DiffBind\\")))')"
+    echo -e "DESeq2\\t\$(Rscript -e 'cat(as.character(packageVersion(\\"DESeq2\\")))')"
+    echo -e "KAS-Analyzer\\t1.0"
     """
 }
 
@@ -80,6 +76,7 @@ workflow {
     validateParameters(parameters_schema: 'nextflow/configs/nextflow_schema.json')
     log.info paramsSummaryLog(workflow, parameters_schema: 'nextflow/configs/nextflow_schema.json')
     TOOL_VERSIONS()
+    TOOL_VERSIONS.out.subscribe { v -> log.info "Tool versions for this run:\n${v.trim()}" }
 
     // 2. Resolve references from --reference_dir (user-staged directory)
     if (!params.reference_dir) {
