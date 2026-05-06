@@ -82,8 +82,6 @@ workflow {
     def fasta         = file("${ref_dir}/hg38.fasta",                       checkIfExists: true)
     def fasta_fai     = file("${ref_dir}/hg38.fasta.fai",                   checkIfExists: true)
     def fasta_dict    = file("${ref_dir}/hg38.dict",                        checkIfExists: true)
-    // bowtie2 index files (hg38.{1,2,3,4,rev.1,rev.2}.bt2) live flat in ref_dir alongside the FASTA;
-    // verify a representative one to catch missing index early
     file("${ref_dir}/hg38.1.bt2",                                           checkIfExists: true)
     def gnomad        = file("${ref_dir}/af-only-gnomad.hg38.vcf.gz",       checkIfExists: true)
     def gnomad_tbi    = file("${ref_dir}/af-only-gnomad.hg38.vcf.gz.tbi",   checkIfExists: true)
@@ -131,11 +129,11 @@ workflow {
     ch_summary_labels = TRIM_ALIGN.out.summary.collect { sample, summary -> sample.id }
     KAS_STATISTICS(ch_summaries, ch_summary_labels)
 
-    // 7Normalization
+    // Normalization
     ch_bg.collect { sample, bg -> bg }.set { all_bg }
     NORMALIZE_BIGWIG(all_bg, KAS_STATISTICS.out.ratios, KAS_STATISTICS.out.labels, 'hg38')
 
-    // 8. QC metrics -- non-input only (matches original)
+    // QC metrics -- non-input only (matches original)
     ch_bed_noninput = ch_bed.filter { sample, bed -> sample.condition != 'input' }
     ch_peaks_for_qc = PEAK_CALL.out.peaks_abridged
     ch_bigwigs_for_qc = NORMALIZE_BIGWIG.out.bigwigs.flatten().filter {
@@ -153,7 +151,7 @@ workflow {
     ch_bam_noninput = ch_bam.filter { sample, bam -> sample.condition != 'input' }
     DEDUP_CONSENSUS(ch_bam_noninput, fasta, fasta_fai)
 
-    // 10. Pseudo-replicate generation (split BAM into 3 pseudo-reps if n=1)
+    // Pseudo-replicate generation (split BAM into 3 pseudo-reps if n=1)
     ch_dedup = DEDUP_CONSENSUS.out.bam.join(DEDUP_CONSENSUS.out.bai)
     ch_dedup_by_cond = ch_dedup.map { sample, bam, bai -> [sample.condition, sample, bam, bai] }
     ch_dedup_by_cond

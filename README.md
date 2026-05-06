@@ -22,14 +22,27 @@ nextflow run GreenleafLab/beCasKAS -r v0.2.0 \
 
 The pipeline does not download references -- you stage them once and pass the directory.
 
+For SLURM clusters, use `-profile slurm` and submit a thin driver job; see [submit_example.sbatch](submit_example.sbatch) for a template.
+
 ## Container support
 
-**Container distribution is not yet provided** in this release. A pre-built container
-image with the full tool stack is planned for a future release; until then, install the
-required tools locally (e.g., via conda) or build your own image and pass it via
-`-c custom.config` setting `process.container = '<your-image>'`. Apptainer / Docker /
-Singularity profiles are pre-wired in `nextflow.config` and will activate as soon as
-a container is supplied.
+The pipeline ships an Apptainer recipe under [nextflow/containers/becaskas.def](nextflow/containers/becaskas.def). Build the SIF locally from the repository root:
+
+```bash
+apptainer build --fakeroot becaskas.sif nextflow/containers/becaskas.def
+```
+
+`--fakeroot` enables unprivileged builds and works on most modern Linux distributions (requires user namespace support; available since kernel 3.8). HPC sites that disable user namespaces will require the admin to build the SIF and distribute it.
+
+Run the pipeline with a `process.container` pointing at the local SIF:
+
+```bash
+nextflow run main.nf \
+    -c <(echo "process.container = '$PWD/becaskas.sif'") \
+    --samplesheet samples.csv --reference_dir /path/to/refs --outdir results/
+```
+
+Apptainer is the default container runtime (configured in [nextflow.config](nextflow.config)) and works for both direct `nextflow run` invocations and `-profile slurm` (HPC). Docker and Singularity profiles are also pre-wired but require a separate image; registry hosting (publishing a prebuilt image) is deferred to a future release.
 
 ## Required references
 
@@ -75,11 +88,12 @@ CSV with columns: `sample_id`, `fastq_1`, `fastq_2`, `condition`, `replicate`, `
 
 ## Tool dependencies
 
-> **TODO** -- Pinned tool/version list pending. Until a container image is provided
-> (see [Container support](#container-support)) or this list is filled in, install
-> the tools used by each module from your distribution's package manager, conda, or
-> equivalent. Tool names are visible in each module's `script:` block under
-> [`nextflow/modules/`](nextflow/modules/).
+The canonical tool/version list lives in:
+- [nextflow/containers/env.yaml](nextflow/containers/env.yaml) -- conda environment spec (bioinformatics tools: BWA, samtools, bcftools, bedtools, MACS2, trim_galore, FastQC, deepTools, picard, gencore, GATK4, UCSC bedGraphToBigWig).
+- [nextflow/containers/install-r-packages.R](nextflow/containers/install-r-packages.R) -- R/Bioconductor packages (DiffBind, DESeq2, edgeR, GenomicRanges, rtracklayer + supporting CRAN packages).
+- KAS-Analyzer 1.0 is cloned from `https://github.com/Ruitulyu/KAS-Analyzer.git` (see [becaskas.def](nextflow/containers/becaskas.def) `%post` section).
+
+These two files are the source of truth: `becaskas.def` consumes them at build time, so any pin update applies to both the container build and any local conda environment built from the same `env.yaml`.
 
 ## Pipeline structure
 
@@ -140,7 +154,7 @@ results/
 - References are user-staged at `--reference_dir`; provenance of the staged files is the user's responsibility.
 - Tool versions captured per-run at workflow start, written to `.nextflow.log` (look for the `Tool versions for this run:` block).
 - Two runs with identical inputs and the same staged references produce bit-identical outputs (subject to bowtie2 multi-thread caveat -- for strict bit-identity, pin `task.cpus = 1` for the trim_align process).
-- Container-based execution is the planned path to byte-pinned reproducibility; not provided in this release (see [Container support](#container-support)).
+- Container-based execution is supported via a locally-built Apptainer SIF (see [Container support](#container-support)). Byte-pinned reproducibility (registry-hosted image with sha256 digest pin) is deferred to a future release; v0.1.0 reproducibility is at the "same recipe, same versions" level rather than "same digest".
 
 **Note:** outputs from this pipeline may differ trivially from the original preprint figures, because random seeds were not set in the original code. The original preprint figures are reproducible only via the legacy repository at commit `d811c3a` (https://github.com/<legacy-org>/beCasKAS).
 
