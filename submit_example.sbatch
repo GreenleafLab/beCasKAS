@@ -8,7 +8,7 @@
 # most of its time idle, polling squeue and staging files.
 #
 # Per-process resource requests (CPUs, memory, walltime) are defined in
-# nextflow/configs/nextflow.config; do NOT try to size this script to match
+# nextflow/configs/process.config; do NOT try to size this script to match
 # the heaviest process.
 #
 # EDIT BEFORE SUBMITTING -- the lines marked CUSTOMIZE must match your

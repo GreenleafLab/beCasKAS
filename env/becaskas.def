@@ -1,0 +1,69 @@
+# Apptainer recipe for the beCasKAS pipeline.
+
+Bootstrap: docker
+From: mambaorg/micromamba:1.5.8
+
+%labels
+    org.opencontainers.image.source https://github.com/GreenleafLab/beCasKAS
+    org.opencontainers.image.description beCasKAS Nextflow pipeline tools
+    org.opencontainers.image.licenses MIT
+
+%files
+    env/env.yaml /opt/build/env.yaml
+    env/install-r-packages.R /opt/build/install-r-packages.R
+
+%post
+    # System deps for KAS-Analyzer wrapper, picard, gatk, R packages requiring system libs.
+    apt-get update && apt-get install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+        curl \
+        wget \
+        unzip \
+        git \
+        openjdk-17-jre-headless \
+        procps \
+        libxml2-dev \
+        libcurl4-openssl-dev \
+        libssl-dev \
+        libfontconfig1-dev \
+        libharfbuzz-dev \
+        libfribidi-dev \
+        libfreetype6-dev \
+        libpng-dev \
+        libtiff5-dev \
+        libjpeg-dev \
+        libxt-dev \
+        libcairo2-dev
+    rm -rf /var/lib/apt/lists/*
+
+    # Conda env
+    micromamba install -y -n base -f /opt/build/env.yaml
+    micromamba clean --all --yes
+
+    # KAS-Analyzer 1.0
+    git clone --depth 1 --branch v1.0 https://github.com/Ruitulyu/KAS-Analyzer.git /opt/KAS-Analyzer
+    chmod +x /opt/KAS-Analyzer/KAS-Analyzer
+
+    # Install R/Bioconductor packages
+    /opt/conda/bin/Rscript /opt/build/install-r-packages.R
+
+%environment
+    export PATH=/opt/KAS-Analyzer:/opt/conda/bin:$PATH
+
+%test
+    trim_galore --version
+    bowtie2 --version | head -1
+    KAS-Analyzer --help > /dev/null
+    samtools --version | head -1
+    macs2 --version
+    picard MarkDuplicates --version 2>&1 | head -1
+    gencore --version 2>&1 | head -1
+    gatk --version | head -1
+    bcftools --version | head -1
+    bedtools --version
+    bedGraphToBigWig 2>&1 | head -1 || true
+    Rscript -e 'library(DiffBind); cat(as.character(packageVersion("DiffBind")), "\n")'
+
+%runscript
+    exec /bin/bash "$@"

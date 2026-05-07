@@ -14,32 +14,37 @@ Detects non-coding off-target base editor unwinding and editing in primary cells
 ### Run
 
 ```bash
-nextflow run GreenleafLab/beCasKAS -r v0.2.0 \
+nextflow run GreenleafLab/beCasKAS \
     --samplesheet samples.csv \
     --reference_dir /path/to/hg38_refs \
     --outdir results/
 ```
 
-The pipeline does not download references -- you stage them once and pass the directory.
+The pipeline does not download references per run. They must be staged in a directory and passed to `--reference_dir`.
 
 For SLURM clusters, use `-profile slurm` and submit a thin driver job; see [submit_example.sbatch](submit_example.sbatch) for a template.
 
 ## Container support
 
-The pipeline ships an Apptainer recipe under [nextflow/containers/becaskas.def](nextflow/containers/becaskas.def). Build the SIF locally from the repository root:
+The pipeline ships an Apptainer recipe under [env/becaskas.def](env/becaskas.def). Build the SIF locally from the repository root:
 
 ```bash
-apptainer build --fakeroot becaskas.sif nextflow/containers/becaskas.def
+apptainer build --fakeroot becaskas.sif env/becaskas.def
 ```
 
-`--fakeroot` enables unprivileged builds and works on most modern Linux distributions (requires user namespace support; available since kernel 3.8). HPC sites that disable user namespaces will require the admin to build the SIF and distribute it.
+`--fakeroot` enables unprivileged builds and works on most modern Linux distributions (requires user namespace support). HPCs that disable user namespaces will require the admin to build the SIF and distribute it.
 
-Run the pipeline with a `process.container` pointing at the local SIF:
+By default the pipeline expects `becaskas.sif` at the repository root (the `params.container` default is `${projectDir}/becaskas.sif`), so once the SIF is built no extra flag is required:
 
 ```bash
 nextflow run main.nf \
-    -c <(echo "process.container = '$PWD/becaskas.sif'") \
     --samplesheet samples.csv --reference_dir /path/to/refs --outdir results/
+```
+
+To use a SIF in a different location, override the default:
+
+```bash
+nextflow run main.nf --container /abs/path/to/becaskas.sif ...
 ```
 
 Apptainer is the default container runtime (configured in [nextflow.config](nextflow.config)) and works for both direct `nextflow run` invocations and `-profile slurm` (HPC). Docker and Singularity profiles are also pre-wired but require a separate image; registry hosting (publishing a prebuilt image) is deferred to a future release.
@@ -49,24 +54,23 @@ Apptainer is the default container runtime (configured in [nextflow.config](next
 Stage the following layout under `--reference_dir`:
 
 ```
-${reference_dir}/
-  hg38.fasta                              # UCSC-style hg38 primary FASTA
-  hg38.fasta.fai                          # samtools faidx
-  hg38.dict                               # samtools dict (sibling of .fasta, GATK convention)
-  hg38.genome                             # chromosome sizes (UCSC chrom.sizes format)
-  hg38.1.bt2                              # bowtie2 forward index (4 files)
-  hg38.2.bt2
-  hg38.3.bt2
-  hg38.4.bt2
-  hg38.rev.1.bt2                          # bowtie2 reverse index (2 files)
-  hg38.rev.2.bt2
-  af-only-gnomad.hg38.vcf.gz              # GATK germline resource
-  af-only-gnomad.hg38.vcf.gz.tbi
-  1000g_pon.hg38.vcf.gz                   # GATK panel of normals
-  1000g_pon.hg38.vcf.gz.tbi
+hg38.fasta                              # UCSC hg38 fasta
+hg38.fasta.fai                          # samtools faidx
+hg38.dict                               # samtools dict
+hg38.genome                             # chromosome sizes (UCSC chrom.sizes)
+hg38.1.bt2                              # bowtie2 forward index (4 files)
+hg38.2.bt2
+hg38.3.bt2
+hg38.4.bt2
+hg38.rev.1.bt2                          # bowtie2 reverse index (2 files)
+hg38.rev.2.bt2
+af-only-gnomad.hg38.vcf.gz              # GATK germline resource
+af-only-gnomad.hg38.vcf.gz.tbi
+1000g_pon.hg38.vcf.gz                   # GATK panel of normals
+1000g_pon.hg38.vcf.gz.tbi
 ```
 
-All reference files live flat in `${reference_dir}/` (no subdirectories). The pipeline expects exactly these filenames. Suggested staging steps:
+All reference files live flat in `${reference_dir}/`. The pipeline expects exactly these filenames. Suggested staging steps:
 1. Download UCSC `hg38.fa.gz` from `https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz`, gunzip, rename to `hg38.fasta`.
 2. `samtools faidx hg38.fasta` and `samtools dict hg38.fasta -o hg38.dict`.
 3. `bowtie2-build hg38.fasta hg38` (~30 to 60 minutes); produces the six `hg38.*.bt2` files in the current directory.
@@ -84,30 +88,30 @@ CSV with columns: `sample_id`, `fastq_1`, `fastq_2`, `condition`, `replicate`, `
 | `fastq_2` | no | Path/URL to R2 FASTQ (omit for single-end) |
 | `condition` | yes | One of `input`, `control`, `treatment` |
 | `replicate` | yes | Replicate number within condition |
-| `control_id` | conditional | sample_id of MACS2 input control (required for control/treatment rows) |
+| `control_id` | conditional | sample_id of MACS2 input control |
 
 ## Tool dependencies
 
 The canonical tool/version list lives in:
-- [nextflow/containers/env.yaml](nextflow/containers/env.yaml) -- conda environment spec (bioinformatics tools: BWA, samtools, bcftools, bedtools, MACS2, trim_galore, FastQC, deepTools, picard, gencore, GATK4, UCSC bedGraphToBigWig).
-- [nextflow/containers/install-r-packages.R](nextflow/containers/install-r-packages.R) -- R/Bioconductor packages (DiffBind, DESeq2, edgeR, GenomicRanges, rtracklayer + supporting CRAN packages).
-- KAS-Analyzer 1.0 is cloned from `https://github.com/Ruitulyu/KAS-Analyzer.git` (see [becaskas.def](nextflow/containers/becaskas.def) `%post` section).
+- [env/env.yaml](env/env.yaml) -- conda environment spec (bioinformatics tools: BWA, samtools, bcftools, bedtools, MACS2, trim_galore, FastQC, deepTools, picard, gencore, GATK4, UCSC bedGraphToBigWig).
+- [env/install-r-packages.R](env/install-r-packages.R) -- R/Bioconductor packages (DiffBind, DESeq2, edgeR, GenomicRanges, rtracklayer + supporting CRAN packages).
+- KAS-Analyzer 1.0 is cloned from `https://github.com/Ruitulyu/KAS-Analyzer.git` (see [becaskas.def](env/becaskas.def) `%post` section).
 
-These two files are the source of truth: `becaskas.def` consumes them at build time, so any pin update applies to both the container build and any local conda environment built from the same `env.yaml`.
+`becaskas.def` consumes them at build time, so any pin update applies to both the container build and any local conda environment built from the same `env.yaml`.
 
 ## Pipeline structure
 
-| Stage | Process | Source file | Source script | Description |
-|---|---|---|---|---|
-| 1 | `TRIM_ALIGN` | `trim_align.nf` | 1_trim_align.sh / 2_align_helper.sh | trim_galore + KAS-Analyzer KAS-seq (Bowtie2, KAS-Analyzer's default aligner) |
-| 2 | `PEAK_CALL` | `analyze.nf` | 3_analyze.sh | MACS2 sharp via KAS-Analyzer (treatment vs input) |
-| 3 | `KAS_STATISTICS` | `analyze.nf` | 3_analyze.sh | Cohort RPM statistics -> ratios.txt |
-| 4 | `NORMALIZE_BIGWIG` | `analyze.nf` | 3_analyze.sh | RPM-ratio normalized bedGraph + UCSC bigWig |
-| 5 | `QC_METRICS` | `analyze.nf` | 3_analyze.sh | FRiP + multiBigwigSummary correlation |
-| 6 | `DEDUP_CONSENSUS` | `picard_gencore_dedup.nf` | 4_picard-gencore.sh | picard MarkDuplicates + gencore consensus dedup |
-| 7 | `SPLIT_BAM_PSEUDOREPS` | `split_bam_pseudoreps.nf` | (new) | (conditional) deterministic BAM partition for n=1 conditions |
-| 8 | `DIFFERENTIAL_PEAKS` | `differential_peaks.nf` | 5E_differential_peaks.Rmd | DiffBind (DESeq2 backend) treatment vs control contrast |
-| 9 | `CALL_VARIANTS` | `mutect2_call_variants.nf` | 6_gatk-mutect2.sh | Mutect2 tumor-only + germline + PoN, restricted to differential peaks |
+| Stage | Process | Source file | Description |
+|---|---|---|---|
+| 1 | `TRIM_ALIGN` | `trim_align.nf` | trim_galore + KAS-Analyzer KAS-seq (Bowtie2, KAS-Analyzer's default aligner) |
+| 2 | `PEAK_CALL` | `analyze.nf` | MACS2 sharp via KAS-Analyzer (treatment vs input) |
+| 3 | `KAS_STATISTICS` | `analyze.nf` | Cohort RPM statistics -> ratios.txt |
+| 4 | `NORMALIZE_BIGWIG` | `analyze.nf` | RPM-ratio normalized bedGraph + UCSC bigWig |
+| 5 | `QC_METRICS` | `analyze.nf` | FRiP + multiBigwigSummary correlation |
+| 6 | `DEDUP_CONSENSUS` | `picard_gencore_dedup.nf` | picard MarkDuplicates + gencore consensus dedup |
+| 7 | `SPLIT_BAM_PSEUDOREPS` | `split_bam_pseudoreps.nf` | (conditional) deterministic BAM partition for n=1 conditions |
+| 8 | `DIFFERENTIAL_PEAKS` | `differential_peaks.nf` | DiffBind (DESeq2 backend) treatment vs control contrast |
+| 9 | `CALL_VARIANTS` | `mutect2_call_variants.nf` | Mutect2 tumor-only + germline + PoN, restricted to differential peaks |
 
 ## Replicate handling
 
