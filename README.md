@@ -95,7 +95,7 @@ CSV with columns: `sample_id`, `fastq_1`, `fastq_2`, `condition`, `replicate`, `
 The canonical tool/version list lives in:
 - [env/env.yaml](env/env.yaml) -- conda environment spec (bioinformatics tools: BWA, samtools, bcftools, bedtools, MACS2, trim_galore, FastQC, deepTools, picard, gencore, GATK4, UCSC bedGraphToBigWig).
 - [env/install-r-packages.R](env/install-r-packages.R) -- R/Bioconductor packages (DiffBind, DESeq2, edgeR, GenomicRanges, rtracklayer + supporting CRAN packages).
-- KAS-Analyzer 1.0 is cloned from `https://github.com/Ruitulyu/KAS-Analyzer.git` (see [becaskas.def](env/becaskas.def) `%post` section).
+- KAS-Analyzer 2.0.0 is cloned from `https://github.com/Ruitulyu/KAS-Analyzer.git` (see [becaskas.def](env/becaskas.def) `%post` section).
 
 `becaskas.def` consumes them at build time, so any pin update applies to both the container build and any local conda environment built from the same `env.yaml`.
 

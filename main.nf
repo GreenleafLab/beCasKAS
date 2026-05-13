@@ -33,7 +33,7 @@ process TOOL_VERSIONS {
     echo -e "R\\t\$(R --version | head -1 | awk '{print \$3}')"
     echo -e "DiffBind\\t\$(Rscript -e 'cat(as.character(packageVersion(\\"DiffBind\\")))')"
     echo -e "DESeq2\\t\$(Rscript -e 'cat(as.character(packageVersion(\\"DESeq2\\")))')"
-    echo -e "KAS-Analyzer\\t1.0"
+    echo -e "KAS-Analyzer\\t2.0.0"
     """
 }
 

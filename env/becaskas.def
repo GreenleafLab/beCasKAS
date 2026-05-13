@@ -10,9 +10,9 @@ From: mambaorg/micromamba:1.5.8
 
 %files
     env/env.yaml /opt/build/env.yaml
-    env/install-r-packages.R /opt/build/install-r-packages.R
 
 %post
+    set -eux
     # System deps for KAS-Analyzer wrapper, picard, gatk, R packages requiring system libs.
     apt-get update && apt-get install -y --no-install-recommends \
         bash \
@@ -41,12 +41,11 @@ From: mambaorg/micromamba:1.5.8
     micromamba install -y -n base -f /opt/build/env.yaml
     micromamba clean --all --yes
 
-    # KAS-Analyzer 1.0
-    git clone --depth 1 --branch v1.0 https://github.com/Ruitulyu/KAS-Analyzer.git /opt/KAS-Analyzer
-    chmod +x /opt/KAS-Analyzer/KAS-Analyzer
-
-    # Install R/Bioconductor packages
-    /opt/conda/bin/Rscript /opt/build/install-r-packages.R
+    # KAS-Analyzer 2.0.0
+    git clone --depth 1 --branch v2.0.0 https://github.com/Ruitulyu/KAS-Analyzer.git /opt/KAS-Analyzer
+    chmod +x /opt/KAS-Analyzer/KAS-pipe2
+    chmod 755 /opt/KAS-Analyzer/scripts/*.sh
+    ln -s /opt/KAS-Analyzer/KAS-pipe2 /opt/KAS-Analyzer/KAS-Analyzer
 
 %environment
     export PATH=/opt/KAS-Analyzer:/opt/conda/bin:$PATH
