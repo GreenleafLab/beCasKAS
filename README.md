@@ -8,7 +8,7 @@ Detects non-coding off-target base editor unwinding and editing in primary cells
 
 ### Requirements
 - [Nextflow](https://www.nextflow.io/) >= 24.04.0
-- Pipeline tools on the executor's `PATH` (see [Tool dependencies](#tool-dependencies) -- list pending)
+- [Apptainer](https://apptainer.org/docs/admin/main/installation.html) >= 1.2.0
 - ~50 GB scratch space + reference data (~30 GB for hg38 + GATK resources)
 
 ### Run
@@ -16,7 +16,7 @@ Detects non-coding off-target base editor unwinding and editing in primary cells
 ```bash
 nextflow run GreenleafLab/beCasKAS \
     --samplesheet samples.csv \
-    --reference_dir /path/to/hg38_refs \
+    --reference_dir /path/to/refs \
     --outdir results/
 ```
 
@@ -32,26 +32,25 @@ The pipeline ships an Apptainer recipe under [env/becaskas.def](env/becaskas.def
 apptainer build --fakeroot becaskas.sif env/becaskas.def
 ```
 
-`--fakeroot` enables unprivileged builds and works on most modern Linux distributions (requires user namespace support). HPCs that disable user namespaces will require the admin to build the SIF and distribute it.
+- `--fakeroot` enables unprivileged builds and works on most modern Linux distributions (requires user namespace support). HPCs that disable user namespaces will require the admin to build the SIF and distribute it.
+- To prevent a truncated `.sif` due to `/tmp` limits on some HPCs, it is advised to specify `$APPTAINER_TMPDIR` and `$APPTAINER_CACHEDIR` prior to builds (Sherlock).
+  ```bash
+  export APPTAINER_TMPDIR=$GROUP_SCRATCH/$USER/apptainer-tmp
+  export APPTAINER_CACHEDIR=$GROUP_SCRATCH/$USER/apptainer-cache
+  mkdir -p "$APPTAINER_TMPDIR" "$APPTAINER_CACHEDIR"
+  ```
 
-By default the pipeline expects `becaskas.sif` at the repository root (the `params.container` default is `${projectDir}/becaskas.sif`), so once the SIF is built no extra flag is required:
-
-```bash
-nextflow run main.nf \
-    --samplesheet samples.csv --reference_dir /path/to/refs --outdir results/
-```
-
-To use a SIF in a different location, override the default:
+By default the pipeline expects `becaskas.sif` at the repository root. To use a SIF in a different location, override the default:
 
 ```bash
 nextflow run main.nf --container /abs/path/to/becaskas.sif ...
 ```
 
-Apptainer is the default container runtime (configured in [nextflow.config](nextflow.config)) and works for both direct `nextflow run` invocations and `-profile slurm` (HPC). Docker and Singularity profiles are also pre-wired but require a separate image; registry hosting (publishing a prebuilt image) is deferred to a future release.
+Apptainer is the default container runtime (configured in [nextflow.config](nextflow.config)) and works for both direct `nextflow run` invocations and `-profile slurm` (HPC). A Docker profile is pre-configured, but requires separate installation.
 
 ## Required references
 
-Stage the following layout under `--reference_dir`:
+Stage the following reference layout under `--reference_dir`:
 
 ```
 hg38.fasta                              # UCSC hg38 fasta
@@ -92,12 +91,9 @@ CSV with columns: `sample_id`, `fastq_1`, `fastq_2`, `condition`, `replicate`, `
 
 ## Tool dependencies
 
-The canonical tool/version list lives in:
-- [env/env.yaml](env/env.yaml) -- conda environment spec (bioinformatics tools: BWA, samtools, bcftools, bedtools, MACS2, trim_galore, FastQC, deepTools, picard, gencore, GATK4, UCSC bedGraphToBigWig).
-- [env/install-r-packages.R](env/install-r-packages.R) -- R/Bioconductor packages (DiffBind, DESeq2, edgeR, GenomicRanges, rtracklayer + supporting CRAN packages).
-- KAS-Analyzer 2.0.0 is cloned from `https://github.com/Ruitulyu/KAS-Analyzer.git` (see [becaskas.def](env/becaskas.def) `%post` section).
-
-`becaskas.def` consumes them at build time, so any pin update applies to both the container build and any local conda environment built from the same `env.yaml`.
+The tool version list lives in:
+- [env/env.yaml](env/env.yaml) - conda environment spec (bioinformatics tools: BWA, samtools, bcftools, bedtools, MACS2, trim_galore, FastQC, deepTools, picard, gencore, GATK4, UCSC bedGraphToBigWig).
+- KAS-Analyzer 2.0.0 is cloned from `https://github.com/Ruitulyu/KAS-Analyzer.git`
 
 ## Pipeline structure
 
@@ -125,8 +121,7 @@ The canonical tool/version list lives in:
 
 Run `nextflow run <pipeline> --help` for the full list with descriptions.
 
-Key parameters and their defaults (matching the original preprint code):
-
+Key parameters and their defaults:
 | Param | Default | Role |
 |---|---|---|
 | `--clip_r2` | 12 | Bases clipped from 5' of R2 (adaptase library prep) |
@@ -152,24 +147,10 @@ results/
   pipeline_info/                           # execution_report, timeline, trace, DAG SVG
 ```
 
-## Reproducibility
-
-- Random seeds set explicitly in R (`set.seed`).
-- References are user-staged at `--reference_dir`; provenance of the staged files is the user's responsibility.
-- Tool versions captured per-run at workflow start, written to `.nextflow.log` (look for the `Tool versions for this run:` block).
-- Two runs with identical inputs and the same staged references produce bit-identical outputs (subject to bowtie2 multi-thread caveat -- for strict bit-identity, pin `task.cpus = 1` for the trim_align process).
-- Container-based execution is supported via a locally-built Apptainer SIF (see [Container support](#container-support)). Byte-pinned reproducibility (registry-hosted image with sha256 digest pin) is deferred to a future release; v0.1.0 reproducibility is at the "same recipe, same versions" level rather than "same digest".
-
-**Note:** outputs from this pipeline may differ trivially from the original preprint figures, because random seeds were not set in the original code. The original preprint figures are reproducible only via the legacy repository at commit `d811c3a` (https://github.com/<legacy-org>/beCasKAS).
-
 ## Citation
 
-See [CITATION.cff](CITATION.cff). If you use this pipeline, please cite the preprint:
-
+If you use this pipeline, please cite the preprint:
 > Wang T., Jessa S., Marinov G.K., Klemm S., Kundaje A., Greenleaf W.J. (2025).
 > Sensitive, direct detection of non-coding off-target base editor unwinding and editing in primary cells.
 > bioRxiv. doi:10.1101/2025.09.25.678665
 
-## License
-
-MIT -- see [LICENSE](LICENSE).
