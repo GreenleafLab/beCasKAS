@@ -33,12 +33,7 @@ apptainer build --fakeroot becaskas.sif env/becaskas.def
 ```
 
 - `--fakeroot` enables unprivileged builds and works on most modern Linux distributions (requires user namespace support). HPCs that disable user namespaces will require the admin to build the SIF and distribute it.
-- To prevent a truncated `.sif` due to `/tmp` limits on some HPCs, it is advised to specify `$APPTAINER_TMPDIR` and `$APPTAINER_CACHEDIR` prior to builds (Sherlock).
-  ```bash
-  export APPTAINER_TMPDIR=$GROUP_SCRATCH/$USER/apptainer-tmp
-  export APPTAINER_CACHEDIR=$GROUP_SCRATCH/$USER/apptainer-cache
-  mkdir -p "$APPTAINER_TMPDIR" "$APPTAINER_CACHEDIR"
-  ```
+- HPCs may have login/interactive download and memory limits. It is typically advised to run a `sbatch` SLURM job to build the container (See [container_build_example.sbatch](container_build_example.sbatch))
 
 By default the pipeline expects `becaskas.sif` at the repository root. To use a SIF in a different location, override the default:
 
