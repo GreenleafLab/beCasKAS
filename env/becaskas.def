@@ -46,6 +46,7 @@ From: mambaorg/micromamba:1.5.8
     chmod +x /opt/KAS-Analyzer/KAS-pipe2
     chmod 755 /opt/KAS-Analyzer/scripts/*.sh
     ln -s /opt/KAS-Analyzer/KAS-pipe2 /opt/KAS-Analyzer/KAS-Analyzer
+    sed -i '1s|^#!/usr/bin/python$|#!/usr/bin/env python3|' /opt/KAS-Analyzer/src/SAMtoBED
 
 %environment
     export PATH=/opt/KAS-Analyzer:/opt/conda/bin:$PATH
@@ -62,6 +63,8 @@ From: mambaorg/micromamba:1.5.8
     bcftools --version | head -1
     bedtools --version
     bedGraphToBigWig 2>&1 | head -1 || true
+    /opt/KAS-Analyzer/src/SAMtoBED --help > /dev/null 2>&1 || /opt/KAS-Analyzer/src/SAMtoBED -h > /dev/null 2>&1 || true
+    head -1 /opt/KAS-Analyzer/src/SAMtoBED | grep -q 'python3'
     Rscript -e 'library(DiffBind); cat(as.character(packageVersion("DiffBind")), "\n")'
 
 %runscript

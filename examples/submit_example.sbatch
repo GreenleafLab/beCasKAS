@@ -14,8 +14,7 @@ set -euo pipefail
 
 # Modify to load java, nextflow, and apptainer on your cluster
 module load java
-module load nextflow
-module load apptainer
+module load biology nextflow
 
 RUN_DIR="${SCRATCH:-$PWD}/beCasKAS/${SLURM_JOB_ID}"
 mkdir -p "${RUN_DIR}"
@@ -29,6 +28,6 @@ REFERENCE_DIR="/path/to/refs/hg38"
 nextflow run "${PIPELINE_DIR}/main.nf" \
     -profile slurm,apptainer \
     --samplesheet "${SAMPLESHEET}" \
-    --reference_dir "${REFERENCE_DIR}" \
+    --refdir "${REFERENCE_DIR}" \
     --outdir results \
     -resume

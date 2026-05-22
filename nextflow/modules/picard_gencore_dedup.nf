@@ -3,6 +3,7 @@
 process DEDUP_CONSENSUS {
 
     tag "${sample.id}"
+    label 'process_medium'
 
     input:
     tuple val(sample), path(sorted_bam)

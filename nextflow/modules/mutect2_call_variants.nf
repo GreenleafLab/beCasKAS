@@ -3,6 +3,7 @@
 process CALL_VARIANTS {
 
     tag "${sample.id}"
+    label 'process_high'
 
     input:
     tuple val(sample), path(dedup_bam), path(dedup_bai)

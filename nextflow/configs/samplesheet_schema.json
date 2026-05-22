@@ -6,7 +6,7 @@
     "type": "array",
     "items": {
         "type": "object",
-        "required": ["sample_id", "fastq_1", "condition", "replicate"],
+        "required": ["sample_id", "fastq_1", "fastq_2", "condition", "replicate"],
         "properties": {
             "sample_id": {
                 "type": "string",
@@ -20,10 +20,10 @@
                 "errorMessage": "fastq_1 must be a path to a .fastq, .fq, .fastq.gz, or .fq.gz file"
             },
             "fastq_2": {
-                "type": ["string", "null"],
+                "type": "string",
                 "format": "file-path",
                 "pattern": "\\.(fastq|fq)(\\.gz)?$",
-                "errorMessage": "fastq_2 must be a path to a .fastq, .fq, .fastq.gz, or .fq.gz file (or empty for single-end)"
+                "errorMessage": "fastq_2 must be a path to a .fastq, .fq, .fastq.gz, or .fq.gz file"
             },
             "condition": {
                 "type": "string",

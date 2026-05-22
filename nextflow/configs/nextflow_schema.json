@@ -27,12 +27,12 @@
         "reference_options": {
             "title": "Reference data options",
             "type": "object",
-            "required": ["reference_dir"],
+            "required": ["refdir"],
             "properties": {
-                "reference_dir": {
+                "refdir": {
                     "type": "string",
                     "format": "directory-path",
-                    "description": "Directory containing pre-staged hg38 references. Required layout: hg38.fasta, hg38.fasta.fai, hg38.dict, hg38.genome (chrom sizes), hg38_Bowtie2Index/hg38.{1,2,3,4,rev.1,rev.2}.bt2, af-only-gnomad.hg38.vcf.gz(.tbi), 1000g_pon.hg38.vcf.gz(.tbi). User is responsible for staging these files; see README."
+                    "description": "Directory containing pre-staged hg38 references in a flat layout (all files at the top level, no subdirectories). Required files: hg38.fasta, hg38.fasta.fai, hg38.dict, hg38.genome (chrom sizes), hg38.{1,2,3,4,rev.1,rev.2}.bt2 (bowtie2 index prefix hg38), af-only-gnomad.hg38.vcf.gz(.tbi), 1000g_pon.hg38.vcf.gz(.tbi). User is responsible for staging these files; see README."
                 }
             }
         },
@@ -122,6 +122,31 @@
                     "default": "48.h"
                 }
             }
+        },
+        "generic_options": {
+            "title": "Generic options",
+            "type": "object",
+            "properties": {
+                "help": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Display help text"
+                },
+                "validate_params": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Validate parameters against the schema at runtime"
+                },
+                "schema_ignore_params": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Comma-separated list of parameter names to ignore during schema validation"
+                },
+                "container": {
+                    "type": "string",
+                    "description": "Path to the Apptainer/Singularity/Docker image used by all processes"
+                }
+            }
         }
     },
     "allOf": [
@@ -131,6 +156,7 @@
         {"$ref": "#/definitions/peak_call_options"},
         {"$ref": "#/definitions/differential_peaks_options"},
         {"$ref": "#/definitions/reproducibility_options"},
-        {"$ref": "#/definitions/resource_options"}
+        {"$ref": "#/definitions/resource_options"},
+        {"$ref": "#/definitions/generic_options"}
     ]
 }

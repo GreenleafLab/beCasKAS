@@ -2,6 +2,8 @@
 
 process DIFFERENTIAL_PEAKS {
 
+    label 'process_high'
+
     input:
     path samplesheet      // pipeline samplesheet with absolute bam_path, peaks_path columns added
 

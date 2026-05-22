@@ -3,6 +3,7 @@
 process SPLIT_BAM_PSEUDOREPS {
 
     tag "${sample.id}"
+    label 'process_low'
 
     input:
     tuple val(sample), path(bam), path(bai)

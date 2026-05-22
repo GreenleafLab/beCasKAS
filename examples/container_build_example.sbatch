@@ -13,7 +13,7 @@ export APPTAINER_CACHEDIR=$GROUP_SCRATCH/$USER/apptainer-cache
 mkdir -p "$APPTAINER_TMPDIR" "$APPTAINER_CACHEDIR"
 
 # Path to beCasKAS repository
-cd $HOME/beCasKAS
+cd $HOME/software/beCasKAS
 apptainer build --fakeroot \
     "$GROUP_SCRATCH/$USER/becaskas.sif" \
     env/becaskas.def

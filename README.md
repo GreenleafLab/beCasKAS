@@ -16,11 +16,11 @@ Detects non-coding off-target base editor unwinding and editing in primary cells
 ```bash
 nextflow run GreenleafLab/beCasKAS \
     --samplesheet samples.csv \
-    --reference_dir /path/to/refs \
+    --refdir /path/to/refs \
     --outdir results/
 ```
 
-The pipeline does not download references per run. They must be staged in a directory and passed to `--reference_dir`.
+The pipeline does not download references per run. They must be staged in a directory and passed to `--refdir`.
 
 For SLURM clusters, use `-profile slurm` and submit a thin driver job; see [submit_example.sbatch](submit_example.sbatch) for a template.
 
@@ -50,7 +50,7 @@ Apptainer is the default container runtime (configured in [nextflow.config](next
 
 ## Required references
 
-Stage the following reference layout under `--reference_dir`:
+Stage the following reference layout under `--refdir`:
 
 ```
 hg38.fasta                              # UCSC hg38 fasta
@@ -69,7 +69,7 @@ af-only-gnomad.hg38.vcf.gz.tbi
 1000g_pon.hg38.vcf.gz.tbi
 ```
 
-All reference files live flat in `${reference_dir}/`. The pipeline expects exactly these filenames. Suggested staging steps:
+All reference files live flat in `${refdir}/`. The pipeline expects exactly these filenames. Suggested staging steps:
 1. Download UCSC `hg38.fa.gz` from `https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz`, gunzip, rename to `hg38.fasta`.
 2. `samtools faidx hg38.fasta` and `samtools dict hg38.fasta -o hg38.dict`.
 3. `bowtie2-build hg38.fasta hg38` (~30 to 60 minutes); produces the six `hg38.*.bt2` files in the current directory.
@@ -91,7 +91,7 @@ CSV with columns: `sample_id`, `fastq_1`, `fastq_2`, `condition`, `replicate`, `
 
 ## Tool dependencies
 
-The tool version list lives in:
+Tool dependencies and pinned versions live in:
 - [env/env.yaml](env/env.yaml) - conda environment spec (bioinformatics tools: BWA, samtools, bcftools, bedtools, MACS2, trim_galore, FastQC, deepTools, picard, gencore, GATK4, UCSC bedGraphToBigWig).
 - KAS-Analyzer 2.0.0 is cloned from `https://github.com/Ruitulyu/KAS-Analyzer.git`
 

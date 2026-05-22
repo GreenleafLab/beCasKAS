@@ -11,6 +11,7 @@
 process PEAK_CALL {
 
     tag "${sample.id}"
+    label 'process_medium'
 
     input:
     tuple val(sample), path(sample_bed), path(control_bed)
@@ -55,6 +56,8 @@ process PEAK_CALL {
 // =====================================================================================
 
 process KAS_STATISTICS {
+
+    label 'process_low'
 
     input:
     path summary_files   // flat list of all per-sample summary files emitted by TRIM_ALIGN
@@ -117,6 +120,8 @@ process KAS_STATISTICS {
 
 process NORMALIZE_BIGWIG {
 
+    label 'process_medium'
+
     input:
     path(bg_files)         // collected: all samples' .bg
     path(ratios_file)      // ratios.txt with one RPM per sample line, in the same order as bg_files
@@ -154,6 +159,8 @@ process NORMALIZE_BIGWIG {
 // =====================================================================================
 
 process QC_METRICS {
+
+    label 'process_medium'
 
     input:
     path(beds)         // non-input sample BEDs

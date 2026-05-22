@@ -1,7 +1,7 @@
 #!/usr/bin/env nextflow
 nextflow.enable.dsl = 2
 
-include { validateParameters; paramsSummaryLog } from 'plugin/nf-validation'
+include { validateParameters; paramsSummaryLog; fromSamplesheet } from 'plugin/nf-validation'
 
 include { TRIM_ALIGN }                                                       from './nextflow/modules/trim_align'
 include { PEAK_CALL; KAS_STATISTICS; NORMALIZE_BIGWIG; QC_METRICS }          from './nextflow/modules/analyze'
@@ -9,33 +9,6 @@ include { DEDUP_CONSENSUS }                                                  fro
 include { SPLIT_BAM_PSEUDOREPS }                                             from './nextflow/modules/split_bam_pseudoreps'
 include { DIFFERENTIAL_PEAKS }                                               from './nextflow/modules/differential_peaks'
 include { CALL_VARIANTS }                                                    from './nextflow/modules/mutect2_call_variants'
-
-// Output tool versions for nextflow.log
-process TOOL_VERSIONS {
-
-    output:
-    stdout
-
-    script:
-    """
-    set -euo pipefail
-    echo -e "tool\\tversion"
-    echo -e "trim_galore\\t\$(trim_galore --version | grep -i 'version' | awk '{print \$NF}')"
-    echo -e "bowtie2\\t\$(bowtie2 --version | head -1 | awk '{print \$NF}')"
-    echo -e "samtools\\t\$(samtools --version | head -1 | awk '{print \$NF}')"
-    echo -e "macs2\\t\$(macs2 --version 2>&1 | awk '{print \$NF}')"
-    echo -e "picard\\t\$(picard MarkDuplicates --version 2>&1 | head -1)"
-    echo -e "gencore\\t\$(gencore --version 2>&1 | head -1 | awk '{print \$NF}')"
-    echo -e "gatk\\t\$(gatk --version | head -1 | awk '{print \$NF}')"
-    echo -e "bcftools\\t\$(bcftools --version | head -1 | awk '{print \$NF}')"
-    echo -e "bedtools\\t\$(bedtools --version | awk '{print \$NF}')"
-    echo -e "deeptools\\t\$(multiBigwigSummary --version 2>&1 | awk '{print \$NF}')"
-    echo -e "R\\t\$(R --version | head -1 | awk '{print \$3}')"
-    echo -e "DiffBind\\t\$(Rscript -e 'cat(as.character(packageVersion(\\"DiffBind\\")))')"
-    echo -e "DESeq2\\t\$(Rscript -e 'cat(as.character(packageVersion(\\"DESeq2\\")))')"
-    echo -e "KAS-Analyzer\\t2.0.0"
-    """
-}
 
 process BUILD_DIFFBIND_SAMPLESHEET {
 
@@ -71,34 +44,32 @@ workflow {
     // Validate params
     validateParameters(parameters_schema: 'nextflow/configs/nextflow_schema.json')
     log.info paramsSummaryLog(workflow, parameters_schema: 'nextflow/configs/nextflow_schema.json')
-    TOOL_VERSIONS()
-    TOOL_VERSIONS.out.subscribe { v -> log.info "Tool versions for this run:\n${v.trim()}" }
 
-    // Get references from --reference_dir
-    if (!params.reference_dir) {
-        error("Missing required --reference_dir. See README for required layout.")
+    // Get references from --refdir
+    if (!params.refdir) {
+        error("Missing required --refdir. See README for required layout.")
     }
-    def ref_dir       = params.reference_dir
-    def fasta         = file("${ref_dir}/hg38.fasta",                       checkIfExists: true)
-    def fasta_fai     = file("${ref_dir}/hg38.fasta.fai",                   checkIfExists: true)
-    def fasta_dict    = file("${ref_dir}/hg38.dict",                        checkIfExists: true)
-    file("${ref_dir}/hg38.1.bt2",                                           checkIfExists: true)
-    def gnomad        = file("${ref_dir}/af-only-gnomad.hg38.vcf.gz",       checkIfExists: true)
-    def gnomad_tbi    = file("${ref_dir}/af-only-gnomad.hg38.vcf.gz.tbi",   checkIfExists: true)
-    def pon           = file("${ref_dir}/1000g_pon.hg38.vcf.gz",            checkIfExists: true)
-    def pon_tbi       = file("${ref_dir}/1000g_pon.hg38.vcf.gz.tbi",        checkIfExists: true)
+    def refdir        = params.refdir
+    def fasta         = file("${refdir}/hg38.fasta",                       checkIfExists: true)
+    def fasta_fai     = file("${refdir}/hg38.fasta.fai",                   checkIfExists: true)
+    def fasta_dict    = file("${refdir}/hg38.dict",                        checkIfExists: true)
+    file("${refdir}/hg38.1.bt2",                                           checkIfExists: true)
+    def gnomad        = file("${refdir}/af-only-gnomad.hg38.vcf.gz",       checkIfExists: true)
+    def gnomad_tbi    = file("${refdir}/af-only-gnomad.hg38.vcf.gz.tbi",   checkIfExists: true)
+    def pon           = file("${refdir}/1000g_pon.hg38.vcf.gz",            checkIfExists: true)
+    def pon_tbi       = file("${refdir}/1000g_pon.hg38.vcf.gz.tbi",        checkIfExists: true)
 
     // Parse samplesheet
     Channel
-        .fromSamplesheet('samplesheet', skip_duplicate_check: false)
-        .map { row ->
+        .fromSamplesheet('samplesheet', parameters_schema: 'nextflow/configs/nextflow_schema.json', skip_duplicate_check: false)
+        .map { sample_id, fastq_1, fastq_2, condition, replicate, control_id ->
             def sample = [
-                id:         row.sample_id,
-                condition:  row.condition,
-                replicate:  row.replicate,
-                control_id: row.control_id ?: ''
+                id:         sample_id,
+                condition:  condition,
+                replicate:  replicate,
+                control_id: control_id ?: ''
             ]
-            tuple(sample, file(row.fastq_1), file(row.fastq_2))
+            tuple(sample, file(fastq_1), file(fastq_2))
         }
         .set { ch_samples }
 
@@ -110,7 +81,7 @@ workflow {
         .set { ch_replicate_counts }
 
     // Trim and align
-    TRIM_ALIGN(ch_samples, file(ref_dir))
+    TRIM_ALIGN(ch_samples, file(refdir))
     ch_bam = TRIM_ALIGN.out.bam
     ch_bed = TRIM_ALIGN.out.bed
     ch_bg  = TRIM_ALIGN.out.bg
