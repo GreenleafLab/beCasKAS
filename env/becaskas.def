@@ -40,6 +40,7 @@ From: mambaorg/micromamba:1.5.8
     # Conda env
     micromamba install -y -n base -f /opt/build/env.yaml
     micromamba clean --all --yes
+    export PATH=/opt/conda/bin:$PATH
 
     # KAS-Analyzer 2.0.0
     git clone --depth 1 --branch v2.0.0 https://github.com/Ruitulyu/KAS-Analyzer.git /opt/KAS-Analyzer
@@ -47,6 +48,7 @@ From: mambaorg/micromamba:1.5.8
     chmod 755 /opt/KAS-Analyzer/scripts/*.sh
     ln -s /opt/KAS-Analyzer/KAS-pipe2 /opt/KAS-Analyzer/KAS-Analyzer
     sed -i '1s|^#!/usr/bin/python$|#!/usr/bin/env python3|' /opt/KAS-Analyzer/src/SAMtoBED
+    Rscript -e 'remotes::install_github("kassambara/easyGgplot2", upgrade = "never")'
 
 %environment
     export PATH=/opt/KAS-Analyzer:/opt/conda/bin:$PATH
@@ -66,6 +68,7 @@ From: mambaorg/micromamba:1.5.8
     /opt/KAS-Analyzer/src/SAMtoBED --help > /dev/null 2>&1 || /opt/KAS-Analyzer/src/SAMtoBED -h > /dev/null 2>&1 || true
     head -1 /opt/KAS-Analyzer/src/SAMtoBED | grep -q 'python3'
     Rscript -e 'library(DiffBind); cat(as.character(packageVersion("DiffBind")), "\n")'
+    Rscript -e 'library(devtools); library(easyGgplot2); cat("easyGgplot2 OK\n")'
 
 %runscript
     exec /bin/bash "$@"

@@ -12,11 +12,11 @@ process TRIM_ALIGN {
     path refdir                   // flat dir containing hg38.{1-4,rev.1,rev.2}.bt2 alongside hg38.fasta and other refs
 
     output:
-    tuple val(sample), path("${sample.id}/Bam_files/${sample.id}_sorted.bam"),     emit: bam
-    tuple val(sample), path("${sample.id}/Bam_files/${sample.id}_sorted.bam.bai"), emit: bai
-    tuple val(sample), path("${sample.id}/Bed_files/${sample.id}.bed"),            emit: bed
-    tuple val(sample), path("${sample.id}/BedGraph_files/${sample.id}.bg"),        emit: bg
-    tuple val(sample), path("${sample.id}/Summary/*"),                           emit: summary, optional: true
+    tuple val(sample), path("Bam_files/${sample.id}_sorted.bam"),     emit: bam
+    tuple val(sample), path("Bam_files/${sample.id}_sorted.bam.bai"), emit: bai
+    tuple val(sample), path("Bed_files/${sample.id}.bed"),            emit: bed
+    tuple val(sample), path("BedGraph_files/${sample.id}.bg"),        emit: bg
+    tuple val(sample), path("Summary/*"),                             emit: summary, optional: true
     path("*_fastqc.{zip,html}"),                                             emit: fastqc, optional: true
 
     script:

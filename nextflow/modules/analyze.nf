@@ -140,10 +140,10 @@ process NORMALIZE_BIGWIG {
 
     # Build the file lists KAS-Analyzer expects (one filename per line).
     ls *.bg | grep -v '\\.nor\\.bg\$' > KAS-seq.txt
-    cp ${labels_file} UCSC_track_names.txt
+    [ "${labels_file}" != "UCSC_track_names.txt" ] && cp ${labels_file} UCSC_track_names.txt || true
 
     # Normalize via KAS-Analyzer with provided ratios.txt
-    KAS-Analyzer normalize -m ratios -k KAS-seq.txt -r ${ratios_file} -s ${genome_name} -b
+    KAS-Analyzer normalize -k KAS-seq.txt -r ${ratios_file} -s ${genome_name} -b
 
     # Track names file for UCSC
     ls *.nor.bg > KAS-seq-nor.txt
