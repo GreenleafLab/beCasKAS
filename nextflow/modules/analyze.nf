@@ -147,7 +147,7 @@ process NORMALIZE_BIGWIG {
 
     # Track names file for UCSC
     ls *.nor.bg > KAS-seq-nor.txt
-    KAS-Analyzer UCSC -k KAS-seq-nor.txt -l UCSC_track_names.txt
+    KAS-Analyzer UCSC -k KAS-seq-nor.txt -n UCSC_track_names.txt
     """
 }
 

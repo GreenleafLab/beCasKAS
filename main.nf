@@ -96,12 +96,15 @@ workflow {
     PEAK_CALL(ch_bed_for_peaks, 'hg38')
 
     // Cohort-level RPM ratio computation
-    ch_summaries = TRIM_ALIGN.out.summary.collect { sample, summary -> summary }
-    ch_summary_labels = TRIM_ALIGN.out.summary.collect { sample, summary -> sample.id }
+    ch_summary_noninput = TRIM_ALIGN.out.summary.filter { sample, summary -> sample.condition != 'input' }
+    ch_summaries = ch_summary_noninput.collect { sample, summary -> summary }
+    ch_summary_labels = ch_summary_noninput.collect { sample, summary -> sample.id }
     KAS_STATISTICS(ch_summaries, ch_summary_labels)
 
     // Normalization
-    ch_bg.collect { sample, bg -> bg }.set { all_bg }
+    ch_bg.filter { sample, bg -> sample.condition != 'input' }
+         .collect { sample, bg -> bg }
+         .set { all_bg }
     NORMALIZE_BIGWIG(all_bg, KAS_STATISTICS.out.ratios, KAS_STATISTICS.out.labels, 'hg38')
 
     // QC metrics -- non-input only (matches original)
