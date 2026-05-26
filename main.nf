@@ -87,11 +87,14 @@ workflow {
     ch_bg  = TRIM_ALIGN.out.bg
 
     // Peak calling
-    ch_bed_by_id = ch_bed.map { sample, bed -> [sample.id, sample, bed] }
-    ch_bed_for_peaks = ch_bed_by_id
-        .filter { id, sample, bed -> sample.condition != 'input' }
-        .map { id, sample, bed -> [sample.control_id, sample, bed] }
-        .combine(ch_bed_by_id.map { id, sample, bed -> [id, bed] }, by: 0)
+    ch_treatments = ch_bed
+        .filter { sample, bed -> sample.condition != 'input' }
+        .map    { sample, bed -> [sample.control_id, sample, bed] }
+    ch_inputs = ch_bed
+        .filter { sample, bed -> sample.condition == 'input' }
+        .map    { sample, bed -> [sample.id, bed] }
+    ch_bed_for_peaks = ch_treatments
+        .combine(ch_inputs, by: 0)
         .map { ctrl_id, sample, sample_bed, ctrl_bed -> tuple(sample, sample_bed, ctrl_bed) }
     PEAK_CALL(ch_bed_for_peaks, 'hg38')
 
@@ -192,4 +195,10 @@ workflow {
         pon,
         pon_tbi
     )
+}
+
+workflow.onComplete {
+    if (workflow.success) {
+        file("${params.outdir}/.pipeline_complete").text = ''
+    }
 }

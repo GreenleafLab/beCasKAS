@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=becaskas-sif-build
 #SBATCH --time=02:00:00
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=32G
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=48G
 #SBATCH --partition=normal
 #SBATCH --output=becaskas-sif-build-%j.out
 #SBATCH --error=becaskas-sif-build-%j.err
