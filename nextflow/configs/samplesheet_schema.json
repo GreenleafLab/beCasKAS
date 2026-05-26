@@ -36,7 +36,8 @@
                 "errorMessage": "replicate must be a positive integer"
             },
             "control_id": {
-                "type": ["string", "null"],
+                "type": "string",
+                "default": "",
                 "errorMessage": "control_id must be a sample_id from this samplesheet (the input sample for MACS2 -c)"
             }
         },

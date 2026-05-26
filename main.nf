@@ -45,6 +45,11 @@ workflow {
     validateParameters(parameters_schema: 'nextflow/configs/nextflow_schema.json')
     log.info paramsSummaryLog(workflow, parameters_schema: 'nextflow/configs/nextflow_schema.json')
 
+    // Run-state markers: pipeline.running while in-flight, swapped to
+    // pipeline.success or pipeline.failure by workflow.onComplete.
+    file(params.outdir).mkdirs()
+    file("${params.outdir}/pipeline.running").text = ''
+
     // Get references from --refdir
     if (!params.refdir) {
         error("Missing required --refdir. See README for required layout.")
@@ -198,7 +203,7 @@ workflow {
 }
 
 workflow.onComplete {
-    if (workflow.success) {
-        file("${params.outdir}/.pipeline_complete").text = ''
-    }
+    file("${params.outdir}/pipeline.running").delete()
+    def marker = workflow.success ? 'pipeline.success' : 'pipeline.failure'
+    file("${params.outdir}/${marker}").text = ''
 }
