@@ -22,7 +22,7 @@ nextflow run GreenleafLab/beCasKAS \
 
 The pipeline does not download references per run. They must be staged in a directory and passed to `--refdir`.
 
-For SLURM clusters, use `-profile slurm` and submit a thin driver job; see [submit_example.sbatch](submit_example.sbatch) for a template.
+For SLURM clusters, use `-profile slurm` and submit a thin driver job; see [submit_example.sbatch](examples/submit_example.sbatch) for a template.
 
 ## Container support
 
@@ -33,7 +33,7 @@ apptainer build --fakeroot becaskas.sif env/becaskas.def
 ```
 
 - `--fakeroot` enables unprivileged builds and works on most modern Linux distributions (requires user namespace support). HPCs that disable user namespaces will require the admin to build the SIF and distribute it.
-- HPCs may have login/interactive download and memory limits. It is typically advised to run a `sbatch` SLURM job to build the container (See [container_build_example.sbatch](container_build_example.sbatch))
+- HPCs may have login/interactive download and memory limits. It is typically advised to run a `sbatch` SLURM job to build the container (See [container_build_example.sbatch](examples/container_build_example.sbatch))
 
 By default the pipeline expects `becaskas.sif` at the repository root. To use a SIF in a different location, override the default:
 
@@ -73,7 +73,7 @@ All reference files live flat in `${refdir}/`. The pipeline expects exactly thes
 
 ## Samplesheet
 
-CSV with columns: `sample_id`, `fastq_1`, `fastq_2`, `condition`, `replicate`, `background_id`. See [samplesheet_example.csv](samplesheet_example.csv).
+CSV with columns: `sample_id`, `fastq_1`, `fastq_2`, `condition`, `replicate`, `background_id`. See [samplesheet_example.csv](examples/samplesheet_example.csv).
 
 | Column | Required | Description |
 |---|---|---|
