@@ -29,11 +29,12 @@ filter_significant_peaks <- function(report, fdr_cutoff, lfc_cutoff) {
 }
 
 #' Emit a human-readable record of the regime used (real reps vs pseudo).
-write_method_metadata <- function(path, replicate_counts, n_pseudo, seed, fdr, lfc) {
+write_method_metadata <- function(path, replicate_counts, n_pseudo, seed, fdr, lfc,
+                                  is_pseudo_regime = FALSE) {
     lines <- c("# differential_peaks regime metadata", "")
     for (cond in names(replicate_counts)) {
         n <- replicate_counts[[cond]]
-        if (n == 1) {
+        if (is_pseudo_regime) {
             lines <- c(lines, sprintf(
                 "%s: 1 sample -> %d pseudo-replicates (auto-split, seed=%d)",
                 cond, n_pseudo, seed))
@@ -43,7 +44,8 @@ write_method_metadata <- function(path, replicate_counts, n_pseudo, seed, fdr, l
         }
     }
     lines <- c(lines, "",
-               sprintf("DiffBind ran with: minMembers=2, method=DESeq2, bGreylist=FALSE"),
+               sprintf("DiffBind ran with: minMembers=2, method=DESeq2, bGreylist=FALSE%s",
+                       if (is_pseudo_regime) ", normalize=LIB (pseudo-rep fallback)" else ""),
                sprintf("Filter: Fold > %g AND FDR < %g", lfc, fdr),
                sprintf("Random seed: %d", seed))
     writeLines(lines, path)
@@ -83,9 +85,21 @@ if (sys.nframe() == 0L && !interactive()) {
     # Build DiffBind sample sheet
     dba_ss <- build_diffbind_samplesheet(pipeline_ss)
 
+    # Detect pseudo-rep regime by the "_pseudoN" suffix that
+    # split_bam_pseudoreps.nf adds. Real-rep runs go through the
+    # legacy 5E_differential_peaks.Rmd path unchanged.
+    is_pseudo_regime <- any(grepl("_pseudo[0-9]+$", dba_ss$SampleID))
+
     # Run DiffBind exactly as in 5E_differential_peaks.Rmd
     samples <- dba(sampleSheet = dba_ss)
     samples <- dba.count(samples, bParallel = TRUE)
+    if (is_pseudo_regime) {
+        # DESeq2 RLE cannot estimate size factors when every peak has at
+        # least one zero across the sparse pseudo-rep columns. Library-size
+        # normalization sidesteps the geometric-mean failure.
+        message("Pseudo-replicate regime detected; using library-size normalization (DBA_NORM_LIB).")
+        samples <- dba.normalize(samples, normalize = DBA_NORM_LIB)
+    }
     samples <- dba.contrast(samples, categories = DBA_CONDITION, minMembers = 2)
     samples <- dba.analyze(samples,
                            bRetrieveAnalysis = FALSE,
@@ -134,7 +148,8 @@ if (sys.nframe() == 0L && !interactive()) {
         n_pseudo         = args$`n-pseudo-replicates`,
         seed             = args$seed,
         fdr              = args$fdr,
-        lfc              = args$lfc
+        lfc              = args$lfc,
+        is_pseudo_regime = is_pseudo_regime
     )
 
     cat("differential_peaks: wrote", nrow(bed), "significant peaks (FDR<", args$fdr,
