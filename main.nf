@@ -67,12 +67,12 @@ workflow {
     // Parse samplesheet
     Channel
         .fromSamplesheet('samplesheet', parameters_schema: 'nextflow/configs/nextflow_schema.json', skip_duplicate_check: false)
-        .map { sample_id, fastq_1, fastq_2, condition, replicate, control_id ->
+        .map { sample_id, fastq_1, fastq_2, condition, replicate, background_id ->
             def sample = [
-                id:         sample_id,
-                condition:  condition,
-                replicate:  replicate,
-                control_id: control_id ?: ''
+                id:            sample_id,
+                condition:     condition,
+                replicate:     replicate,
+                background_id: background_id ?: ''
             ]
             tuple(sample, file(fastq_1), file(fastq_2))
         }
@@ -80,7 +80,7 @@ workflow {
 
     // Per-condition replicate counts
     ch_samples
-        .filter { sample, r1, r2 -> sample.condition != 'input' }
+        .filter { sample, r1, r2 -> sample.condition != 'background' }
         .map { sample, r1, r2 -> sample.condition }
         .reduce([:]) { acc, cond -> acc[cond] = (acc[cond] ?: 0) + 1; acc }
         .set { ch_replicate_counts }
@@ -93,10 +93,10 @@ workflow {
 
     // Peak calling
     ch_treatments = ch_bed
-        .filter { sample, bed -> sample.condition != 'input' }
-        .map    { sample, bed -> [sample.control_id, sample, bed] }
+        .filter { sample, bed -> sample.condition != 'background' }
+        .map    { sample, bed -> [sample.background_id, sample, bed] }
     ch_inputs = ch_bed
-        .filter { sample, bed -> sample.condition == 'input' }
+        .filter { sample, bed -> sample.condition == 'background' }
         .map    { sample, bed -> [sample.id, bed] }
     ch_bed_for_peaks = ch_treatments
         .combine(ch_inputs, by: 0)
@@ -104,19 +104,19 @@ workflow {
     PEAK_CALL(ch_bed_for_peaks, 'hg38')
 
     // Cohort-level RPM ratio computation
-    ch_summary_noninput = TRIM_ALIGN.out.summary.filter { sample, summary -> sample.condition != 'input' }
+    ch_summary_noninput = TRIM_ALIGN.out.summary.filter { sample, summary -> sample.condition != 'background' }
     ch_summaries = ch_summary_noninput.collect { sample, summary -> summary }
     ch_summary_labels = ch_summary_noninput.collect { sample, summary -> sample.id }
     KAS_STATISTICS(ch_summaries, ch_summary_labels)
 
     // Normalization
-    ch_bg.filter { sample, bg -> sample.condition != 'input' }
+    ch_bg.filter { sample, bg -> sample.condition != 'background' }
          .collect { sample, bg -> bg }
          .set { all_bg }
     NORMALIZE_BIGWIG(all_bg, KAS_STATISTICS.out.ratios, KAS_STATISTICS.out.labels, 'hg38')
 
-    // QC metrics -- non-input only (matches original)
-    ch_bed_noninput = ch_bed.filter { sample, bed -> sample.condition != 'input' }
+    // QC metrics -- non-background only (matches original)
+    ch_bed_noninput = ch_bed.filter { sample, bed -> sample.condition != 'background' }
     ch_peaks_for_qc = PEAK_CALL.out.peaks_abridged
     ch_bigwigs_for_qc = NORMALIZE_BIGWIG.out.bigwigs.flatten().filter {
         true   // TODO: filter by sample id once channels are joined
@@ -130,7 +130,7 @@ workflow {
     )
 
     // Deduplicate
-    ch_bam_noninput = ch_bam.filter { sample, bam -> sample.condition != 'input' }
+    ch_bam_noninput = ch_bam.filter { sample, bam -> sample.condition != 'background' }
     DEDUP_CONSENSUS(ch_bam_noninput, fasta, fasta_fai)
 
     // Pseudo-replicate generation (split BAM into 3 pseudo-reps if n=1)
@@ -181,8 +181,8 @@ workflow {
 
     // Build samplesheet TSV (one row per BAM, joined to peaks)
     BUILD_DIFFBIND_SAMPLESHEET(
-        ch_diff_rows.collect(),
-        ch_peaks_by_id.collect()
+        ch_diff_rows.toList(),
+        ch_peaks_by_id.toList()
     )
     .set { ch_diff_samplesheet }
     DIFFERENTIAL_PEAKS(ch_diff_samplesheet)

@@ -27,18 +27,18 @@
             },
             "condition": {
                 "type": "string",
-                "enum": ["input", "control", "treatment"],
-                "errorMessage": "condition must be one of: input, control, treatment"
+                "enum": ["background", "control", "treatment"],
+                "errorMessage": "condition must be one of: background, control, treatment"
             },
             "replicate": {
                 "type": "integer",
                 "minimum": 1,
                 "errorMessage": "replicate must be a positive integer"
             },
-            "control_id": {
+            "background_id": {
                 "type": "string",
                 "default": "",
-                "errorMessage": "control_id must be a sample_id from this samplesheet (the input sample for MACS2 -c)"
+                "errorMessage": "background_id must be a sample_id from this samplesheet (the background sample for MACS2 -c)"
             }
         },
         "uniqueEntries": ["sample_id"]

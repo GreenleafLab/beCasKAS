@@ -73,16 +73,16 @@ All reference files live flat in `${refdir}/`. The pipeline expects exactly thes
 
 ## Samplesheet
 
-CSV with columns: `sample_id`, `fastq_1`, `fastq_2`, `condition`, `replicate`, `control_id`. See [samplesheet_example.csv](samplesheet_example.csv).
+CSV with columns: `sample_id`, `fastq_1`, `fastq_2`, `condition`, `replicate`, `background_id`. See [samplesheet_example.csv](samplesheet_example.csv).
 
 | Column | Required | Description |
 |---|---|---|
 | `sample_id` | yes | Unique sample identifier |
 | `fastq_1` | yes | Path/URL to R1 FASTQ |
 | `fastq_2` | no | Path/URL to R2 FASTQ (omit for single-end) |
-| `condition` | yes | One of `input`, `control`, `treatment` |
+| `condition` | yes | One of `background`, `control`, `treatment` |
 | `replicate` | yes | Replicate number within condition |
-| `control_id` | conditional | sample_id of MACS2 input control |
+| `background_id` | conditional | sample_id of the `background` row used as MACS2 `-c` |
 
 ## Tool dependencies
 
@@ -95,7 +95,7 @@ Tool dependencies and pinned versions live in:
 | Stage | Process | Source file | Description |
 |---|---|---|---|
 | 1 | `TRIM_ALIGN` | `trim_align.nf` | trim_galore + KAS-Analyzer KAS-seq (Bowtie2, KAS-Analyzer's default aligner) |
-| 2 | `PEAK_CALL` | `analyze.nf` | MACS2 sharp via KAS-Analyzer (treatment vs input) |
+| 2 | `PEAK_CALL` | `analyze.nf` | MACS2 sharp via KAS-Analyzer (treatment vs background) |
 | 3 | `KAS_STATISTICS` | `analyze.nf` | Cohort RPM statistics -> ratios.txt |
 | 4 | `NORMALIZE_BIGWIG` | `analyze.nf` | RPM-ratio normalized bedGraph + UCSC bigWig |
 | 5 | `QC_METRICS` | `analyze.nf` | FRiP + multiBigwigSummary correlation |

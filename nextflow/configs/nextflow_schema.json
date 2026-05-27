@@ -14,7 +14,7 @@
                     "type": "string",
                     "format": "file-path",
                     "schema": "nextflow/configs/samplesheet_schema.json",
-                    "description": "Path to samplesheet CSV with columns: sample_id, fastq_1, fastq_2, condition, replicate, control_id"
+                    "description": "Path to samplesheet CSV with columns: sample_id, fastq_1, fastq_2, condition, replicate, background_id"
                 },
                 "outdir": {
                     "type": "string",

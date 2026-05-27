@@ -1,4 +1,4 @@
-sample_id,fastq_1,fastq_2,condition,replicate,control_id
-00-HEK293T_24hrs_neg_input,/path/to/00_R1.fastq.gz,/path/to/00_R2.fastq.gz,input,1,
+sample_id,fastq_1,fastq_2,condition,replicate,background_id
+00-HEK293T_24hrs_neg_input,/path/to/00_R1.fastq.gz,/path/to/00_R2.fastq.gz,background,1,
 04-HEK293T_24hrs_ABE8e_exp1,/path/to/04_exp1_R1.fastq.gz,/path/to/04_exp1_R2.fastq.gz,control,1,00-HEK293T_24hrs_neg_input
 05-HEK293T_24hrs_ABE8e_HEK4_exp1,/path/to/05_exp1_R1.fastq.gz,/path/to/05_exp1_R2.fastq.gz,treatment,1,00-HEK293T_24hrs_neg_input
