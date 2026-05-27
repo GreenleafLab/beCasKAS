@@ -1,11 +1,6 @@
-// Combined module for 3_analyze.sh: per-sample peak calling, cohort RPM statistics,
-// normalize + bigWig tracks, and cohort QC (FRiP + correlation). Each process is
-// independently importable from main.nf:
-//   include { PEAK_CALL; KAS_STATISTICS; NORMALIZE_BIGWIG; QC_METRICS } from './nextflow/modules/analyze'
-
 // =====================================================================================
-// PEAK_CALL -- per-sample MACS2 peak calling via KAS-Analyzer
-// Reproduces 3_analyze.sh:55-58 (peakscalling + post-process to BED).
+// PEAK_CALL -- per-sample MACS2 peak calling via KAS-Analyzer,
+// then post-process the MACS2 xls into clean BEDs for DiffBind + FRiP.
 // =====================================================================================
 
 process PEAK_CALL {
@@ -43,16 +38,10 @@ process PEAK_CALL {
 
 
 // =====================================================================================
-// KAS_STATISTICS -- cohort RPM ratio computation
-// Reproduces 3_analyze.sh:74-96 verbatim:
-//   1. KAS-Analyzer statistics aggregates per-sample summaries into a cohort summary
-//   2. awk #1: appends RPM column = 1,000,000 / Deduplicated_reads (column 4)
-//   3. awk #2: extracts the RPM column for samples -> ratios.txt
-//
-// The only generalization vs the original: the row-count boundary in the second awk
-// changes from the hardcoded "NR <= 16" (which assumed 1 header + 15 samples in the
-// preprint's specific cohort) to "NR <= n_samples + 1" so cohorts of any size work.
-// The RPM math is bit-identical.
+// KAS_STATISTICS -- cohort RPM ratio computation:
+//   1. KAS-Analyzer statistics aggregates per-sample summaries -> cohort summary
+//   2. append RPM column = 1,000,000 / Deduplicated_reads (column 4)
+//   3. extract the per-sample RPM column -> ratios.txt for normalization
 // =====================================================================================
 
 process KAS_STATISTICS {
@@ -60,7 +49,7 @@ process KAS_STATISTICS {
     label 'process_low'
 
     input:
-    path summary_files   // flat list of all per-sample summary files emitted by TRIM_ALIGN
+    path summary_files   // TRIM_ALIGN summary files
     val sample_labels    // ordered list of sample IDs (one per sample, matches FRiP/UCSC label order)
 
     output:
@@ -80,29 +69,28 @@ process KAS_STATISTICS {
         cp "\$f" Summary/
     done
 
-    # Cohort-level statistics -> produces Summary/KAS_statistics_summary.txt (verbatim from 3_analyze.sh:74)
+    # Cohort-level statistics
     KAS-Analyzer statistics -o KAS_statistics -s ./Summary
 
-    # awk #1 verbatim from 3_analyze.sh:79-91
+    # Append RPM = 1,000,000 / Deduplicated_reads to each row
     awk 'BEGIN { FS=OFS="\\t" }
         NR==1 {
-            print \$0, "RPM"   # Print the header with the new column "RPM"
+            print \$0, "RPM"
         }
         NR > 1 {
-            if (\$4 > 0) {  # needs to know correct column
+            if (\$4 > 0) {
                 rpm = 1000000 / \$4
             } else {
-                rpm = 0  # If Deduplicated_reads is zero or negative, set RPM to 0
+                rpm = 00
             }
-            print \$0, rpm  # Print the entire row with the new RPM value
+            print \$0, rpm
         }
     ' Summary/KAS_statistics_summary.txt > Summary/KAS_statistics_summary_rpm.txt
 
-    # awk #2 from 3_analyze.sh:96, generalized to cohort size
+    # Extract the per-sample RPM column -> ratios.txt
     awk -F"\\t" 'NR > 1 && NR <= ${n_samples + 1} {print \$7}' \\
         Summary/KAS_statistics_summary_rpm.txt > ratios.txt
 
-    # Surface the summary files at process root for output capture
     cp Summary/KAS_statistics_summary.txt     KAS_statistics_summary.txt
     cp Summary/KAS_statistics_summary_rpm.txt KAS_statistics_summary_rpm.txt
 
@@ -113,9 +101,8 @@ process KAS_STATISTICS {
 
 
 // =====================================================================================
-// NORMALIZE_BIGWIG -- RPM-ratio normalization + UCSC bigWig tracks
-// Reproduces the normalize + UCSC subblock of 3_analyze.sh (lines 132-138).
-// Cohort-aware per-sample: needs all samples' bg files + a ratios.txt from KAS_STATISTICS.
+// NORMALIZE_BIGWIG -- RPM-ratio normalize each sample's bedGraph against the cohort,
+// then emit UCSC bigWig tracks. Needs all bg files + ratios.txt from KAS_STATISTICS.
 // =====================================================================================
 
 process NORMALIZE_BIGWIG {
@@ -138,7 +125,7 @@ process NORMALIZE_BIGWIG {
     """
     set -euo pipefail
 
-    # Build the file lists KAS-Analyzer expects (one filename per line).
+    # Build the file lists
     ls *.bg | grep -v '\\.nor\\.bg\$' > KAS-seq.txt
     [ "${labels_file}" != "UCSC_track_names.txt" ] && cp ${labels_file} UCSC_track_names.txt || true
 
@@ -153,9 +140,8 @@ process NORMALIZE_BIGWIG {
 
 
 // =====================================================================================
-// QC_METRICS -- cohort FRiP + multiBigwigSummary correlation
-// Reproduces 3_analyze.sh:102 (FRiP) and 144-150 (deeptools correlation).
-// Operates on non-input samples only (matches the s1, s2 array filter in the original).
+// QC_METRICS -- per-sample FRiP scores plus a deeptools Pearson correlation matrix
+// across normalized bigWigs. Non-input samples only.
 // =====================================================================================
 
 process QC_METRICS {

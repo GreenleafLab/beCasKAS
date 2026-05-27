@@ -1,4 +1,5 @@
-// Reproduces 6_gatk-mutect2.sh per non-input sample.
+// Per non-input sample: subset BAM to differential-peak regions, run tumor-only Mutect2,
+// then split the calls into C>T and A>G strand-context VCFs.
 
 process CALL_VARIANTS {
 
@@ -30,7 +31,7 @@ process CALL_VARIANTS {
     bedtools intersect -abam ${dedup_bam} -b ${differential_peaks_bed} > ${sample.id}_diffbind.bam
     samtools index ${sample.id}_diffbind.bam
 
-    # Tumor-only Mutect2 with germline + PoN; --native-pair-hmm-threads 8 matches original 6_gatk-mutect2.sh
+    # Tumor-only Mutect2 with germline resource + panel of normals
     gatk Mutect2 \\
         -R ${fasta} \\
         -I ${sample.id}_diffbind.bam \\
@@ -45,7 +46,7 @@ process CALL_VARIANTS {
     # Drop alt-chromosome variants (chrUn_*, chr*_alt, etc.)
     awk '/^#/ || \$1 !~ /_/' ${sample.id}_decomposed.vcf > ${sample.id}_no-alt-chr.vcf
 
-    # Filter C>T (matches original 6_gatk-mutect2.sh awk)
+    # Keep C>T variants (and G>A on the reverse strand)
     awk 'BEGIN{OFS="\\t"} {
         if (\$0 ~ /^#/) { print; next }
         ref=\$4; alt=\$5

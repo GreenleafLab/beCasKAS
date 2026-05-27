@@ -3,18 +3,16 @@
 work/
 results/
 *.nf.log
-
 # Containers
 *.sif
 *.tar
-
-# OS / editor
+*.bak
+# OS
 .DS_Store
 .vscode/
 .idea/
 *.swp
 *~
-
 # References
 references/
 *.fasta
@@ -24,16 +22,13 @@ references/
 *.vcf.gz.tbi
 *.fai
 *.dict
-
 # R
 .Rhistory
 .RData
 .Rproj.user/
 .Renviron
-
 # Tests
 tests/
-
 # Python
 __pycache__/
 *.pyc

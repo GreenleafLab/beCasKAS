@@ -1,4 +1,4 @@
-// Reproduces 4_picard-gencore.sh per-sample.
+// Per-sample dedup: stamp read groups, mark duplicates with picard, then collapse to consensus reads with gencore.
 
 process DEDUP_CONSENSUS {
 
@@ -19,7 +19,7 @@ process DEDUP_CONSENSUS {
     """
     set -euo pipefail
 
-    # Add default read group (picard requires it for downstream tools)
+    # Add default read group (required for downstream picard)
     picard AddOrReplaceReadGroups \\
         I=${sorted_bam} \\
         O=${sample.id}_sorted_rg.bam \\

@@ -1,13 +1,12 @@
 #!/usr/bin/env Rscript
-# Reproduces 5E_differential_peaks.Rmd as a parameterized CLI script.
+# Cohort differential peak analysis with DiffBind + DESeq2 (library-size fallback for pseudo-rep regimes);
+# emits significant-peaks BED, full results TSV, volcano PDF, and the DBA RDS.
 
 suppressPackageStartupMessages({
     library(optparse)
 })
 
-# ---------- Helper functions (testable) ----------
-
-#' Build a DiffBind-format sample sheet from the pipeline samplesheet.
+# Build a DiffBind-format sample sheet from the pipeline samplesheet.
 build_diffbind_samplesheet <- function(pipeline_ss) {
     keep <- pipeline_ss$condition %in% c("control", "treatment")
     ss <- pipeline_ss[keep, , drop = FALSE]
@@ -22,13 +21,13 @@ build_diffbind_samplesheet <- function(pipeline_ss) {
     )
 }
 
-#' Apply Fold > lfc_cutoff AND FDR < fdr_cutoff filter.
+# Apply Fold > lfc_cutoff AND FDR < fdr_cutoff filter.
 filter_significant_peaks <- function(report, fdr_cutoff, lfc_cutoff) {
     keep <- report$Fold > lfc_cutoff & report$FDR < fdr_cutoff
     report[keep, , drop = FALSE]
 }
 
-#' Emit a human-readable record of the regime used (real reps vs pseudo).
+# Emit a human-readable record of the regime used (real reps vs pseudo).
 write_method_metadata <- function(path, replicate_counts, n_pseudo, seed, fdr, lfc,
                                   is_pseudo_regime = FALSE) {
     lines <- c("# differential_peaks regime metadata", "")
@@ -85,18 +84,13 @@ if (sys.nframe() == 0L && !interactive()) {
     # Build DiffBind sample sheet
     dba_ss <- build_diffbind_samplesheet(pipeline_ss)
 
-    # Detect pseudo-rep regime by the "_pseudoN" suffix that
-    # split_bam_pseudoreps.nf adds. Real-rep runs go through the
-    # legacy 5E_differential_peaks.Rmd path unchanged.
+    # Detect pseudo-rep regime via the "_pseudoN" suffix that split_bam_pseudoreps.nf adds.
     is_pseudo_regime <- any(grepl("_pseudo[0-9]+$", dba_ss$SampleID))
 
-    # Run DiffBind exactly as in 5E_differential_peaks.Rmd
+    # DiffBind workflow: count -> (optional LIB normalize) -> contrast -> analyze
     samples <- dba(sampleSheet = dba_ss)
     samples <- dba.count(samples, bParallel = TRUE)
     if (is_pseudo_regime) {
-        # DESeq2 RLE cannot estimate size factors when every peak has at
-        # least one zero across the sparse pseudo-rep columns. Library-size
-        # normalization sidesteps the geometric-mean failure.
         message("Pseudo-replicate regime detected; using library-size normalization (DBA_NORM_LIB).")
         samples <- dba.normalize(samples, normalize = DBA_NORM_LIB)
     }
@@ -110,12 +104,12 @@ if (sys.nframe() == 0L && !interactive()) {
     # Pull report
     report <- as.data.frame(dba.report(samples, contrast = 1, th = 1))
 
-    # Color column for volcano (matches 5E)
+    # Color column: Up/Down by fold sign at FDR threshold, else NS
     report$color <- "NS"
     report$color[report$FDR <  args$fdr & report$Fold >  1] <- "Up"
     report$color[report$FDR <  args$fdr & report$Fold < 1]  <- "Down"
 
-    # Volcano plot (matches 5E ggplot)
+    # Volcano plot
     v <- ggplot(report, aes(x = Fold, y = -log10(FDR), color = color)) +
          geom_point(alpha = 0.2) +
          scale_color_manual(values = c("Up" = "#FCAE1E", "Down" = "grey70", "NS" = "grey70")) +

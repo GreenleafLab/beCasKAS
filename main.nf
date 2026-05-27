@@ -7,50 +7,20 @@ include { TRIM_ALIGN }                                                       fro
 include { PEAK_CALL; KAS_STATISTICS; NORMALIZE_BIGWIG; QC_METRICS }          from './nextflow/modules/analyze'
 include { DEDUP_CONSENSUS }                                                  from './nextflow/modules/picard_gencore_dedup'
 include { SPLIT_BAM_PSEUDOREPS }                                             from './nextflow/modules/split_bam_pseudoreps'
-include { DIFFERENTIAL_PEAKS }                                               from './nextflow/modules/differential_peaks'
+include { BUILD_DIFFBIND_SAMPLESHEET; DIFFERENTIAL_PEAKS }                   from './nextflow/modules/differential_peaks'
 include { CALL_VARIANTS }                                                    from './nextflow/modules/mutect2_call_variants'
-
-process BUILD_DIFFBIND_SAMPLESHEET {
-
-    input:
-    val rows         // list of [sample_id, condition, replicate, bam_path]
-    val peaks_map    // list of [sample_id, peaks_path] (real samples only; pseudo-reps reuse parent peaks)
-
-    output:
-    path 'diffbind_samplesheet.csv'
-
-    script:
-    """
-    python3 - <<'PYEOF' > diffbind_samplesheet.csv
-    import csv, sys
-
-    rows = ${groovy.json.JsonOutput.toJson(rows)}
-    peaks_map = dict([(p[0], p[1]) for p in ${groovy.json.JsonOutput.toJson(peaks_map)}])
-
-    writer = csv.writer(sys.stdout)
-    writer.writerow(['sample_id', 'condition', 'replicate', 'bam_path', 'peaks_path'])
-    for r in rows:
-        sid, cond, rep, bam = r
-        # Pseudo-rep IDs look like "X_pseudo1"; their peaks are the parent's
-        parent = sid.split('_pseudo')[0]
-        peaks = peaks_map.get(sid) or peaks_map.get(parent) or ''
-        writer.writerow([sid, cond, rep, bam, peaks])
-    PYEOF
-    """
-}
 
 workflow {
 
-    // Validate params
+    // Validate params with schema
     validateParameters(parameters_schema: 'nextflow/configs/nextflow_schema.json')
     log.info paramsSummaryLog(workflow, parameters_schema: 'nextflow/configs/nextflow_schema.json')
 
-    // Run-state markers: pipeline.running while in-flight, swapped to
-    // pipeline.success or pipeline.failure by workflow.onComplete.
+    // Run-state marker
     file(params.outdir).mkdirs()
     file("${params.outdir}/pipeline.running").text = ''
 
-    // Get references from --refdir
+    // References from --refdir base path
     if (!params.refdir) {
         error("Missing required --refdir. See README for required layout.")
     }
@@ -115,7 +85,7 @@ workflow {
          .set { all_bg }
     NORMALIZE_BIGWIG(all_bg, KAS_STATISTICS.out.ratios, KAS_STATISTICS.out.labels, 'hg38')
 
-    // QC metrics -- non-background only (matches original)
+    // QC metrics -- non-background samples only
     ch_bed_noninput = ch_bed.filter { sample, bed -> sample.condition != 'background' }
     ch_peaks_for_qc = PEAK_CALL.out.peaks_abridged
     ch_bigwigs_for_qc = NORMALIZE_BIGWIG.out.bigwigs.flatten().filter {
@@ -129,7 +99,7 @@ workflow {
         ch_bed_noninput.collect { sample, bed -> sample.id }
     )
 
-    // Deduplicate
+    // Picard/Gencode Deduplicate
     ch_bam_noninput = ch_bam.filter { sample, bam -> sample.condition != 'background' }
     DEDUP_CONSENSUS(ch_bam_noninput, fasta, fasta_fai)
 
@@ -145,7 +115,7 @@ workflow {
         }
         .set { ch_branched }
 
-    // Single-rep conditions
+    // Single-replicate conditions
     ch_branched.single
         .map { cond, samples, bams, bais ->
             tuple(samples[0], bams[0], bais[0])
@@ -153,14 +123,14 @@ workflow {
         .set { ch_to_split }
     SPLIT_BAM_PSEUDOREPS(ch_to_split)
 
-    // Multi-rep conditions
+    // Multi-replicate conditions
     ch_branched.multi
         .flatMap { cond, samples, bams, bais ->
             (0..<samples.size()).collect { i -> tuple(samples[i], bams[i], bais[i]) }
         }
         .set { ch_real_reps }
 
-    // Build the unified samplesheet for DIFFERENTIAL_PEAKS:
+    // Setting up Differential Peaks samplesheet
     ch_real_reps_for_diff = ch_real_reps.map { sample, bam, bai ->
         [sample.id, sample.condition, sample.replicate, bam.toString()]
     }
@@ -174,7 +144,6 @@ workflow {
 
     // Combine real + pseudo, then join with peaks
     ch_diff_rows = ch_real_reps_for_diff.mix(ch_pseudo_for_diff)
-
     PEAK_CALL.out.peaks
         .map { sample, peaks -> [sample.id, peaks.toString()] }
         .set { ch_peaks_by_id }
