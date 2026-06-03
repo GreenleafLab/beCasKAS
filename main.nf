@@ -12,6 +12,7 @@ include { CALL_VARIANTS }                                                    fro
 
 workflow {
 
+    main:
     // Validate params with schema
     validateParameters(parameters_schema: 'nextflow/configs/nextflow_schema.json')
     log.info paramsSummaryLog(workflow, parameters_schema: 'nextflow/configs/nextflow_schema.json')
@@ -169,9 +170,8 @@ workflow {
         pon,
         pon_tbi
     )
-}
 
-workflow.onComplete {
+    onComplete:
     file("${params.outdir}/pipeline.running").delete()
     def marker = workflow.success ? 'pipeline.success' : 'pipeline.failure'
     file("${params.outdir}/${marker}").text = ''
