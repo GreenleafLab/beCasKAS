@@ -8,7 +8,7 @@ process TRIM_ALIGN {
 
     input:
     tuple val(sample), path(r1), path(r2)
-    path refdir                   // flat dir containing hg38.{1-4,rev.1,rev.2}.bt2 alongside hg38.fasta and other refs
+    path refdir
 
     output:
     tuple val(sample), path("Bam_files/${sample.id}_sorted.bam"),     emit: bam
@@ -22,26 +22,14 @@ process TRIM_ALIGN {
     """
     set -euo pipefail
 
-    # Decompress (for KAS-Analyzer))
-    R1=${r1}
-    R2=${r2}
-    if [[ "\$R1" == *.gz ]]; then
-        gunzip -c \$R1 > ${sample.id}_R1.fastq
-        R1=${sample.id}_R1.fastq
-    fi
-    if [[ "\$R2" == *.gz ]]; then
-        gunzip -c \$R2 > ${sample.id}_R2.fastq
-        R2=${sample.id}_R2.fastq
-    fi
+    # Trim with trim_galore. Both trim_galore (0.6.10) and KAS-Analyzer/KAS-pipe2
+    trim_galore -j ${task.cpus} --fastqc --paired --clip_R2 ${params.clip_r2} --basename ${sample.id} ${r1} ${r2}
+    R1_TRIM=\$(ls ${sample.id}_val_1.fq* | head -n1)
+    R2_TRIM=\$(ls ${sample.id}_val_2.fq* | head -n1)
 
-    # Trim with trim_galore
-    trim_galore -j ${task.cpus} --fastqc --paired --clip_R2 ${params.clip_r2} \$R1 \$R2
-
-    R1_TRIM=\$(basename \$R1 .fastq)_val_1.fq
-    R2_TRIM=\$(basename \$R2 .fastq)_val_2.fq
-
-    # KAS-seq align"
+    # KAS-seq align
     REFDIR_ABS=\$(readlink -f ${refdir})
     KAS-Analyzer KAS-seq -t ${task.cpus} -i \$REFDIR_ABS/hg38 -o ${sample.id} -s hg38 -1 \$R1_TRIM -2 \$R2_TRIM
+    rm -f ${sample.id}_val_*.fq* ${sample.id}/${sample.id}_val_*.fq* 2>/dev/null || true
     """
 }
