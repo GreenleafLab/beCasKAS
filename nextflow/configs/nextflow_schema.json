@@ -59,6 +59,18 @@
                 }
             }
         },
+        "staging_options": {
+            "title": "Pipeline staging",
+            "type": "object",
+            "properties": {
+                "stage": {
+                    "type": "string",
+                    "enum": ["all", "kas_analyzer", "diffbind"],
+                    "default": "all",
+                    "description": "Which stage(s) to run. 'all' = full pipeline; 'kas_analyzer' = stop after the per-case DiffBind samplesheets; 'diffbind' = run the differential + variant stage (use with -resume after a kas_analyzer run)."
+                }
+            }
+        },
         "differential_peaks_options": {
             "title": "differential_peaks step",
             "type": "object",
@@ -154,6 +166,7 @@
         {"$ref": "#/definitions/reference_options"},
         {"$ref": "#/definitions/trim_align_options"},
         {"$ref": "#/definitions/peak_call_options"},
+        {"$ref": "#/definitions/staging_options"},
         {"$ref": "#/definitions/differential_peaks_options"},
         {"$ref": "#/definitions/reproducibility_options"},
         {"$ref": "#/definitions/resource_options"},
