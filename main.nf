@@ -12,16 +12,16 @@ include { CALL_VARIANTS }                                                    fro
 
 workflow {
 
-    // Validate params
+    main:
+    // Validate params with schema
     validateParameters(parameters_schema: 'nextflow/configs/nextflow_schema.json')
     log.info paramsSummaryLog(workflow, parameters_schema: 'nextflow/configs/nextflow_schema.json')
 
-    // Run-state markers: pipeline.running while in-flight, swapped to
-    // pipeline.success or pipeline.failure by workflow.onComplete.
+    // Run-state marker
     file(params.outdir).mkdirs()
     file("${params.outdir}/pipeline.running").text = ''
 
-    // Get references from --refdir
+    // References from --refdir base path
     if (!params.refdir) {
         error("Missing required --refdir. See README for required layout.")
     }
@@ -86,7 +86,7 @@ workflow {
          .set { all_bg }
     NORMALIZE_BIGWIG(all_bg, KAS_STATISTICS.out.ratios, KAS_STATISTICS.out.labels, 'hg38')
 
-    // QC metrics -- non-background only (matches original)
+    // QC metrics -- non-background samples only
     ch_bed_noninput = ch_bed.filter { sample, bed -> sample.condition != 'background' }
     ch_peaks_for_qc = PEAK_CALL.out.peaks_abridged
     ch_bigwigs_for_qc = NORMALIZE_BIGWIG.out.bigwigs.flatten().filter {
@@ -100,7 +100,7 @@ workflow {
         ch_bed_noninput.collect { sample, bed -> sample.id }
     )
 
-    // Deduplicate
+    // Picard/Gencode Deduplicate
     ch_bam_noninput = ch_bam.filter { sample, bam -> sample.condition != 'background' }
     DEDUP_CONSENSUS(ch_bam_noninput, fasta, fasta_fai)
 
@@ -116,7 +116,7 @@ workflow {
         }
         .set { ch_branched }
 
-    // Single-rep conditions
+    // Single-replicate conditions
     ch_branched.single
         .map { cond, samples, bams, bais ->
             tuple(samples[0], bams[0], bais[0])
@@ -124,14 +124,14 @@ workflow {
         .set { ch_to_split }
     SPLIT_BAM_PSEUDOREPS(ch_to_split)
 
-    // Multi-rep conditions
+    // Multi-replicate conditions
     ch_branched.multi
         .flatMap { cond, samples, bams, bais ->
             (0..<samples.size()).collect { i -> tuple(samples[i], bams[i], bais[i]) }
         }
         .set { ch_real_reps }
 
-    // Build the unified samplesheet for DIFFERENTIAL_PEAKS:
+    // Setting up Differential Peaks samplesheet
     ch_real_reps_for_diff = ch_real_reps.map { sample, bam, bai ->
         [sample.id, sample.condition, sample.replicate, bam.toString()]
     }
@@ -145,7 +145,6 @@ workflow {
 
     // Combine real + pseudo, then join with peaks
     ch_diff_rows = ch_real_reps_for_diff.mix(ch_pseudo_for_diff)
-
     PEAK_CALL.out.peaks
         .map { sample, peaks -> [sample.id, peaks.toString()] }
         .set { ch_peaks_by_id }
@@ -204,9 +203,8 @@ workflow {
         pon,
         pon_tbi
     )
-}
 
-workflow.onComplete {
+    onComplete:
     file("${params.outdir}/pipeline.running").delete()
     def marker = workflow.success ? 'pipeline.success' : 'pipeline.failure'
     file("${params.outdir}/${marker}").text = ''

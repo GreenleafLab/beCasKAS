@@ -4,9 +4,7 @@ suppressPackageStartupMessages({
     library(optparse)
 })
 
-# ---------- Helper functions (testable) ----------
-
-#' Build a DiffBind-format sample sheet from the pipeline samplesheet.
+# Build a DiffBind-format sample sheet from the pipeline samplesheet.
 build_diffbind_samplesheet <- function(pipeline_ss) {
     keep <- pipeline_ss$condition %in% c("control", "treatment")
     ss <- pipeline_ss[keep, , drop = FALSE]
@@ -21,13 +19,13 @@ build_diffbind_samplesheet <- function(pipeline_ss) {
     )
 }
 
-#' Apply Fold > lfc_cutoff AND FDR < fdr_cutoff filter.
+# Apply Fold > lfc_cutoff AND FDR < fdr_cutoff filter.
 filter_significant_peaks <- function(report, fdr_cutoff, lfc_cutoff) {
     keep <- report$Fold > lfc_cutoff & report$FDR < fdr_cutoff
     report[keep, , drop = FALSE]
 }
 
-#' Emit a human-readable record of the regime used (real reps vs pseudo).
+# Emit a human-readable record of the regime used (real reps vs pseudo).
 write_method_metadata <- function(path, replicate_counts, n_pseudo, seed, fdr, lfc,
                                   is_pseudo_regime = FALSE) {
     lines <- c("# differential_peaks regime metadata", "")
@@ -137,6 +135,7 @@ if (sys.nframe() == 0L && !interactive()) {
     report$color[report$FDR < fdr_cut & report$Fold >  1] <- "Up"
     report$color[report$FDR < fdr_cut & report$Fold < 1]  <- "Down"
 
+    # Volcano plot
     # Volcano plot
     v <- ggplot(report, aes(x = Fold, y = -log10(FDR), color = color)) +
          geom_point(alpha = 0.2) +

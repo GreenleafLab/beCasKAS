@@ -22,7 +22,14 @@ nextflow run GreenleafLab/beCasKAS \
 
 The pipeline does not download references per run. They must be staged in a directory and passed to `--refdir`.
 
-For SLURM clusters, use `-profile slurm` and submit a thin driver job; see [submit_example.sbatch](submit_example.sbatch) for a template.
+By default, the pipeline is configured for a SLURM/HPC cluster (`-profile slurm`). To submit a thin driver job see [submit_example.sbatch](examples/submit_example.sbatch) for a template. To run on a single local machine, add `-profile local`, which switches to the local executor and automatically caps each job's resource request to the CPUs/RAM available on that machine:
+
+```bash
+nextflow run GreenleafLab/beCasKAS -profile local \
+    --samplesheet samples.csv \
+    --refdir /path/to/refs \
+    --outdir results/
+```
 
 ## Container support
 
@@ -33,7 +40,7 @@ apptainer build --fakeroot becaskas.sif env/becaskas.def
 ```
 
 - `--fakeroot` enables unprivileged builds and works on most modern Linux distributions (requires user namespace support). HPCs that disable user namespaces will require the admin to build the SIF and distribute it.
-- HPCs may have login/interactive download and memory limits. It is typically advised to run a `sbatch` SLURM job to build the container (See [container_build_example.sbatch](container_build_example.sbatch))
+- HPCs may have login/interactive download and memory limits. It is typically advised to run a `sbatch` SLURM job to build the container (See [container_build_example.sbatch](examples/container_build_example.sbatch))
 
 By default the pipeline expects `becaskas.sif` at the repository root. To use a SIF in a different location, override the default:
 
@@ -41,7 +48,7 @@ By default the pipeline expects `becaskas.sif` at the repository root. To use a 
 nextflow run main.nf --container /abs/path/to/becaskas.sif ...
 ```
 
-Apptainer is the default container runtime (configured in [nextflow.config](nextflow.config)) and works for both direct `nextflow run` invocations and `-profile slurm` (HPC). A Docker profile is pre-configured, but requires separate installation.
+Apptainer is the default container runtime (configured in [nextflow.config](nextflow.config)) and works for both the default SLURM/HPC target and `-profile local`. A Docker profile is pre-configured, but requires separate installation.
 
 ## Required references
 
@@ -52,28 +59,46 @@ hg38.fasta                              # UCSC hg38 fasta
 hg38.fasta.fai                          # samtools faidx
 hg38.dict                               # samtools dict
 hg38.genome                             # chromosome sizes (UCSC chrom.sizes)
-hg38.1.bt2                              # bowtie2 forward index (4 files)
+
+hg38.1.bt2                              # bowtie2 indices
 hg38.2.bt2
 hg38.3.bt2
 hg38.4.bt2
-hg38.rev.1.bt2                          # bowtie2 reverse index (2 files)
+hg38.rev.1.bt2
 hg38.rev.2.bt2
-af-only-gnomad.hg38.vcf.gz              # GATK germline resource
-af-only-gnomad.hg38.vcf.gz.tbi
-1000g_pon.hg38.vcf.gz                   # GATK panel of normals
+
+1000g_pon.hg38.vcf.gz                   # GATK resources
 1000g_pon.hg38.vcf.gz.tbi
+af-only-gnomad.hg38.vcf.gz
+af-only-gnomad.hg38.vcf.gz.tbi
 ```
 
-All reference files live flat in `${refdir}/`. The pipeline expects exactly these filenames. Suggested staging steps:
-1. Download UCSC `hg38.fa.gz` from `https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz`, gunzip, rename to `hg38.fasta`.
-2. `samtools faidx hg38.fasta` and `samtools dict hg38.fasta -o hg38.dict`.
-3. `bowtie2-build hg38.fasta hg38` (~30 to 60 minutes); produces the six `hg38.*.bt2` files in the current directory.
-4. `samtools view -H hg38.fasta` to derive `hg38.genome` (chrom.sizes), or download from UCSC.
-5. Download GATK somatic resources from `https://storage.googleapis.com/gatk-best-practices/somatic-hg38/`.
+All reference files live flat in `${refdir}/`. The pipeline expects exactly these filenames.
+
+Suggesting staging steps directly use the generated `becaskas.sif` container as dependencies for `samtools` and `bowtie2-build` commands are already bundled inside. Run the following from inside `${refdir}`.
+
+1. Download UCSC `hg38.fa.gz` from [UCSC HG38 Download Page](https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz),`gunzip` and rename to `hg38.fasta`.
+
+2. Build the fasta index/dict, the Bowtie2 index (~30 to 60 minutes; produces the six `hg38.*.bt2` files), and the chrom.sizes (specify your specific path to `becaskas.sif`):
+```bash
+apptainer exec becaskas.sif samtools faidx hg38.fasta
+apptainer exec becaskas.sif samtools dict hg38.fasta -o hg38.dict
+apptainer exec becaskas.sif bowtie2-build hg38.fasta hg38
+cut -f1,2 hg38.fasta.fai > hg38.genome   # chrom.sizes from the .fai above, or download from UCSC
+```
+
+3. Download the GATK somatic resources:
+```bash
+BASE=https://storage.googleapis.com/gatk-best-practices/somatic-hg38
+wget $BASE/af-only-gnomad.hg38.vcf.gz
+wget $BASE/af-only-gnomad.hg38.vcf.gz.tbi
+wget $BASE/1000g_pon.hg38.vcf.gz
+wget $BASE/1000g_pon.hg38.vcf.gz.tbi
+```
 
 ## Samplesheet
 
-CSV with columns: `sample_id`, `fastq_1`, `fastq_2`, `condition`, `replicate`, `background_id`. See [samplesheet_example.csv](samplesheet_example.csv).
+CSV with columns: `sample_id`, `fastq_1`, `fastq_2`, `condition`, `replicate`, `background_id`. See [samplesheet_example.csv](examples/samplesheet_example.csv).
 
 | Column | Required | Description |
 |---|---|---|
