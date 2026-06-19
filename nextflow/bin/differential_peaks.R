@@ -1,5 +1,4 @@
 #!/usr/bin/env Rscript
-# Reproduces 5E_differential_peaks.Rmd as a parameterized CLI script.
 
 suppressPackageStartupMessages({
     library(optparse)
@@ -51,6 +50,21 @@ write_method_metadata <- function(path, replicate_counts, n_pseudo, seed, fdr, l
     writeLines(lines, path)
 }
 
+resolve_diffbind_consts <- function(arglist) {
+    lapply(arglist, function(v) {
+        if (is.character(v) && length(v) == 1L && grepl("^DBA_", v)) {
+            getExportedValue("DiffBind", v)
+        } else {
+            v
+        }
+    })
+}
+
+read_diffbind_params <- function(path) {
+    if (is.null(path) || !nzchar(path)) return(list())
+    jsonlite::fromJSON(path, simplifyVector = FALSE)
+}
+
 if (sys.nframe() == 0L && !interactive()) {
 
     option_list <- list(
@@ -63,7 +77,8 @@ if (sys.nframe() == 0L && !interactive()) {
                     action = "store_true"),
         make_option("--seed",          type = "integer",   default = 42),
         make_option("--threads",       type = "integer",   default = 4),
-        make_option("--n-pseudo-replicates", type = "integer", default = 3)
+        make_option("--n-pseudo-replicates", type = "integer", default = 3),
+        make_option("--diffbind-params", type = "character", default = NULL)
     )
     args <- parse_args(OptionParser(option_list = option_list))
     set.seed(args$seed)
@@ -75,6 +90,10 @@ if (sys.nframe() == 0L && !interactive()) {
 
     # Read pipeline samplesheet
     pipeline_ss <- read.csv(args$samplesheet, stringsAsFactors = FALSE)
+    dbp      <- read_diffbind_params(args$`diffbind-params`)
+    fdr_cut  <- if (!is.null(dbp$fdr))      dbp$fdr      else args$fdr
+    lfc_cut  <- if (!is.null(dbp$lfc))      dbp$lfc      else args$lfc
+    greylist <- if (!is.null(dbp$greylist)) dbp$greylist else args$greylist
 
     # Compute per-condition rep counts for metadata
     rep_counts <- list(
@@ -85,37 +104,40 @@ if (sys.nframe() == 0L && !interactive()) {
     # Build DiffBind sample sheet
     dba_ss <- build_diffbind_samplesheet(pipeline_ss)
 
-    # Detect pseudo-rep regime by the "_pseudoN" suffix that
-    # split_bam_pseudoreps.nf adds. Real-rep runs go through the
-    # legacy 5E_differential_peaks.Rmd path unchanged.
     is_pseudo_regime <- any(grepl("_pseudo[0-9]+$", dba_ss$SampleID))
 
-    # Run DiffBind exactly as in 5E_differential_peaks.Rmd
+    # Run DiffBind
     samples <- dba(sampleSheet = dba_ss)
-    samples <- dba.count(samples, bParallel = TRUE)
-    if (is_pseudo_regime) {
-        # DESeq2 RLE cannot estimate size factors when every peak has at
-        # least one zero across the sparse pseudo-rep columns. Library-size
-        # normalization sidesteps the geometric-mean failure.
+    count_args <- modifyList(
+        list(minOverlap = args$`min-overlap`, bParallel = TRUE),
+        resolve_diffbind_consts(dbp$`dba.count`))
+    samples <- do.call(dba.count, c(list(samples), count_args))
+
+    norm_args <- resolve_diffbind_consts(dbp$`dba.normalize`)
+    if (is_pseudo_regime && is.null(norm_args$normalize)) {
         message("Pseudo-replicate regime detected; using library-size normalization (DBA_NORM_LIB).")
-        samples <- dba.normalize(samples, normalize = DBA_NORM_LIB)
+        norm_args$normalize <- DBA_NORM_LIB
     }
+    if (length(norm_args)) {
+        samples <- do.call(dba.normalize, c(list(samples), norm_args))
+    }
+
     samples <- dba.contrast(samples, categories = DBA_CONDITION, minMembers = 2)
-    samples <- dba.analyze(samples,
-                           bRetrieveAnalysis = FALSE,
-                           bParallel         = TRUE,
-                           bGreylist         = args$greylist)
+    analyze_args <- modifyList(
+        list(bRetrieveAnalysis = FALSE, bParallel = TRUE, bGreylist = greylist),
+        resolve_diffbind_consts(dbp$`dba.analyze`))
+    samples <- do.call(dba.analyze, c(list(samples), analyze_args))
     dba.show(samples, bContrasts = TRUE)
 
     # Pull report
     report <- as.data.frame(dba.report(samples, contrast = 1, th = 1))
 
-    # Color column for volcano (matches 5E)
+    # Color column for volcano
     report$color <- "NS"
-    report$color[report$FDR <  args$fdr & report$Fold >  1] <- "Up"
-    report$color[report$FDR <  args$fdr & report$Fold < 1]  <- "Down"
+    report$color[report$FDR < fdr_cut & report$Fold >  1] <- "Up"
+    report$color[report$FDR < fdr_cut & report$Fold < 1]  <- "Down"
 
-    # Volcano plot (matches 5E ggplot)
+    # Volcano plot
     v <- ggplot(report, aes(x = Fold, y = -log10(FDR), color = color)) +
          geom_point(alpha = 0.2) +
          scale_color_manual(values = c("Up" = "#FCAE1E", "Down" = "grey70", "NS" = "grey70")) +
@@ -126,8 +148,8 @@ if (sys.nframe() == 0L && !interactive()) {
 
     # Filtered differential_peaks.bed
     sig <- filter_significant_peaks(report,
-                                    fdr_cutoff = args$fdr,
-                                    lfc_cutoff = args$lfc)
+                                    fdr_cutoff = fdr_cut,
+                                    lfc_cutoff = lfc_cut)
     bed <- sig[, c("seqnames", "start", "end")]
     write.table(bed,
                 file = file.path(args$`output-dir`, "differential_peaks.bed"),
@@ -147,11 +169,11 @@ if (sys.nframe() == 0L && !interactive()) {
         replicate_counts = rep_counts,
         n_pseudo         = args$`n-pseudo-replicates`,
         seed             = args$seed,
-        fdr              = args$fdr,
-        lfc              = args$lfc,
+        fdr              = fdr_cut,
+        lfc              = lfc_cut,
         is_pseudo_regime = is_pseudo_regime
     )
 
-    cat("differential_peaks: wrote", nrow(bed), "significant peaks (FDR<", args$fdr,
-        ", Fold>", args$lfc, ")\n")
+    cat("differential_peaks: wrote", nrow(bed), "significant peaks (FDR<", fdr_cut,
+        ", Fold>", lfc_cut, ")\n")
 }

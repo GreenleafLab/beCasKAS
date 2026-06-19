@@ -27,8 +27,8 @@
             },
             "condition": {
                 "type": "string",
-                "enum": ["background", "control", "treatment"],
-                "errorMessage": "condition must be one of: background, control, treatment"
+                "pattern": "^[A-Za-z0-9_]+$",
+                "errorMessage": "condition must be a single token of letters/digits/underscores. Reserved: 'background' (peak-calling input) and 'control' (shared reference); any other label defines a treatment compared against control."
             },
             "replicate": {
                 "type": "integer",

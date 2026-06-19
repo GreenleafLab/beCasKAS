@@ -7,37 +7,8 @@ include { TRIM_ALIGN }                                                       fro
 include { PEAK_CALL; KAS_STATISTICS; NORMALIZE_BIGWIG; QC_METRICS }          from './nextflow/modules/analyze'
 include { DEDUP_CONSENSUS }                                                  from './nextflow/modules/picard_gencore_dedup'
 include { SPLIT_BAM_PSEUDOREPS }                                             from './nextflow/modules/split_bam_pseudoreps'
-include { DIFFERENTIAL_PEAKS }                                               from './nextflow/modules/differential_peaks'
+include { BUILD_DIFFBIND_SAMPLESHEET; DIFFERENTIAL_PEAKS }                   from './nextflow/modules/differential_peaks'
 include { CALL_VARIANTS }                                                    from './nextflow/modules/mutect2_call_variants'
-
-process BUILD_DIFFBIND_SAMPLESHEET {
-
-    input:
-    val rows         // list of [sample_id, condition, replicate, bam_path]
-    val peaks_map    // list of [sample_id, peaks_path] (real samples only; pseudo-reps reuse parent peaks)
-
-    output:
-    path 'diffbind_samplesheet.csv'
-
-    script:
-    """
-    python3 - <<'PYEOF' > diffbind_samplesheet.csv
-    import csv, sys
-
-    rows = ${groovy.json.JsonOutput.toJson(rows)}
-    peaks_map = dict([(p[0], p[1]) for p in ${groovy.json.JsonOutput.toJson(peaks_map)}])
-
-    writer = csv.writer(sys.stdout)
-    writer.writerow(['sample_id', 'condition', 'replicate', 'bam_path', 'peaks_path'])
-    for r in rows:
-        sid, cond, rep, bam = r
-        # Pseudo-rep IDs look like "X_pseudo1"; their peaks are the parent's
-        parent = sid.split('_pseudo')[0]
-        peaks = peaks_map.get(sid) or peaks_map.get(parent) or ''
-        writer.writerow([sid, cond, rep, bam, peaks])
-    PYEOF
-    """
-}
 
 workflow {
 
@@ -179,19 +150,52 @@ workflow {
         .map { sample, peaks -> [sample.id, peaks.toString()] }
         .set { ch_peaks_by_id }
 
-    // Build samplesheet TSV (one row per BAM, joined to peaks)
     BUILD_DIFFBIND_SAMPLESHEET(
         ch_diff_rows.toList(),
         ch_peaks_by_id.toList()
     )
-    .set { ch_diff_samplesheet }
-    DIFFERENTIAL_PEAKS(ch_diff_samplesheet)
 
-    // Call Variants
+    // Fan out one task per case
+    ch_case_samplesheets = BUILD_DIFFBIND_SAMPLESHEET.out.samplesheets
+        .flatten()
+        .map { ss ->
+            def case_id = ss.name.replaceFirst(/^diffbind_samplesheet_/, '')
+                                  .replaceFirst(/\.csv$/, '')
+            tuple(case_id, ss)
+        }
+
+    def diffbindOverrides = (params.diffbind_overrides ?: [:])
+    ch_diff_jobs = ch_case_samplesheets.map { case_id, ss ->
+        def o = (diffbindOverrides[case_id] ?: [:])
+        def merged = [
+            fdr     : (o.fdr      != null ? o.fdr      : params.fdr),
+            lfc     : (o.lfc      != null ? o.lfc      : params.lfc),
+            greylist: (o.greylist != null ? o.greylist : params.greylist)
+        ]
+        ['dba.count', 'dba.normalize', 'dba.analyze'].each { k ->
+            if (o.containsKey(k)) merged[k] = o[k]
+        }
+        tuple(case_id, ss, groovy.json.JsonOutput.toJson(merged))
+    }
+    DIFFERENTIAL_PEAKS(ch_diff_jobs)
+
     ch_dedup_for_variants = DEDUP_CONSENSUS.out.bam.join(DEDUP_CONSENSUS.out.bai)
+    ch_cases_only = ch_case_samplesheets.map { case_id, ss -> case_id }
+
+    ch_ctrl_by_case = ch_dedup_for_variants
+        .filter { sample, bam, bai -> sample.condition == 'control' }
+        .combine(ch_cases_only)
+        .map { sample, bam, bai, case_id -> tuple(case_id, sample, bam, bai) }
+    ch_trt_by_case = ch_dedup_for_variants
+        .filter { sample, bam, bai -> sample.condition != 'control' }
+        .map { sample, bam, bai -> tuple(sample.condition, sample, bam, bai) }
+
+    ch_variant_jobs = ch_ctrl_by_case.mix(ch_trt_by_case)
+        .combine(DIFFERENTIAL_PEAKS.out.bed, by: 0)
+        .map { case_id, sample, bam, bai, bed -> tuple(case_id, sample, bam, bai, bed) }
+
     CALL_VARIANTS(
-        ch_dedup_for_variants,
-        DIFFERENTIAL_PEAKS.out.bed,
+        ch_variant_jobs,
         fasta,
         fasta_fai,
         fasta_dict,

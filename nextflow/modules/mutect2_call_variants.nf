@@ -2,12 +2,11 @@
 
 process CALL_VARIANTS {
 
-    tag "${sample.id}"
+    tag "${case_id}:${sample.id}"
     label 'process_high'
 
     input:
-    tuple val(sample), path(dedup_bam), path(dedup_bai)
-    path differential_peaks_bed
+    tuple val(case_id), val(sample), path(dedup_bam), path(dedup_bai), path(differential_peaks_bed)
     path fasta
     path fasta_fai
     path fasta_dict

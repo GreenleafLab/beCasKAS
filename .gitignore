@@ -9,6 +9,8 @@ results/
 *.tar
 
 # OS / editor
+docs
+.claude
 .DS_Store
 .vscode/
 .idea/

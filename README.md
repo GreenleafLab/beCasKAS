@@ -80,7 +80,7 @@ CSV with columns: `sample_id`, `fastq_1`, `fastq_2`, `condition`, `replicate`, `
 | `sample_id` | yes | Unique sample identifier |
 | `fastq_1` | yes | Path/URL to R1 FASTQ |
 | `fastq_2` | no | Path/URL to R2 FASTQ (omit for single-end) |
-| `condition` | yes | One of `background`, `control`, `treatment` |
+| `condition` | yes | Reserved: `background` (MACS2 input) and `control` (shared reference). Any other label defines a treatment against the `control`. |
 | `replicate` | yes | Replicate number within condition |
 | `background_id` | conditional | sample_id of the `background` row used as MACS2 `-c` |
 
@@ -101,7 +101,7 @@ Tool dependencies and pinned versions live in:
 | 5 | `QC_METRICS` | `analyze.nf` | FRiP + multiBigwigSummary correlation |
 | 6 | `DEDUP_CONSENSUS` | `picard_gencore_dedup.nf` | picard MarkDuplicates + gencore consensus dedup |
 | 7 | `SPLIT_BAM_PSEUDOREPS` | `split_bam_pseudoreps.nf` | (conditional) deterministic BAM partition for n=1 conditions |
-| 8 | `DIFFERENTIAL_PEAKS` | `differential_peaks.nf` | DiffBind (DESeq2 backend) treatment vs control contrast |
+| 8 | `DIFFERENTIAL_PEAKS` | `differential_peaks.nf` | DiffBind (DESeq2 backend); one control-vs-N treatment cases, output under `06_differential/<case>/` |
 | 9 | `CALL_VARIANTS` | `mutect2_call_variants.nf` | Mutect2 tumor-only + germline + PoN, restricted to differential peaks |
 
 ## Replicate handling
@@ -111,6 +111,31 @@ Tool dependencies and pinned versions live in:
 | n >= 2 | Standard DiffBind path with biological replicates (publication-grade) |
 | n = 1 | Auto-split BAM into 3 deterministic pseudo-replicates (`--n_pseudo_replicates`); fold-change estimates remain valid; p-values are optimistic -- **not for biological inference** |
 | n = 0 (non-input) | Pipeline fails fast with a clear error |
+
+### Adjusting Differential Expression Parameters
+
+By default, multiple treatment cases (distinct `condition` labels) are each compared against the single shared `control`.
+
+Per-case differential parameters can be overridden without re-running the rest of the pipeline. After an initial run, write an overrides file (JSON):
+
+    {
+      "diffbind_overrides": {
+        "treatment_HEK4": {
+          "fdr": 0.01, "lfc": 2,
+          "dba.count":     { "minOverlap": 1,
+                             "summits": 100,
+                             "score": "DBA_SCORE_READS" },
+          "dba.analyze":   { "method": "DBA_EDGER" },
+          "dba.normalize": { "normalize": "DBA_NORM_LIB" }
+        }
+      }
+    }
+
+then re-run with resume:
+
+    nextflow run main.nf -resume -params-file overrides.json ...
+
+Only the overridden case's `DIFFERENTIAL_PEAKS` and its downstream will re-execute. All other cases and every upstream stage will resume from cache.
 
 ## Parameters
 
