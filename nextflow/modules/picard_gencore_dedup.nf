@@ -41,7 +41,7 @@ process DEDUP_CONSENSUS {
         -r ${fasta} \\
         --html ${sample.id}_picard-gencore-dedup.html
 
-    samtools index ${sample.id}_picard-gencore-dedup.bam ${sample.id}_picard-gencore-dedup.bam.bai
+    samtools index -@ ${task.cpus} ${sample.id}_picard-gencore-dedup.bam ${sample.id}_picard-gencore-dedup.bam.bai
 
     rm ${sample.id}_sorted_rg.bam ${sample.id}_marked.bam
     """

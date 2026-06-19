@@ -173,7 +173,7 @@ process QC_METRICS {
     KAS-Analyzer FRiP -o KAS-Seq -p peaks_input_files.txt -l labels_input.txt -k KAS-seq_input.txt || true
 
     # Correlation matrix (deeptools)
-    multiBigwigSummary bins -b ${bigwigs.join(' ')} -o all.npz --outRawCounts all.tab
+    multiBigwigSummary bins -p ${task.cpus} -b ${bigwigs.join(' ')} -o all.npz --outRawCounts all.tab
 
     plotCorrelation -in all.npz -c pearson -p scatterplot -o all-deeptools.pdf \\
         --removeOutliers --log1p --xRange 0 4 --yRange 0 4

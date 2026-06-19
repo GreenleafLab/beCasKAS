@@ -28,19 +28,19 @@ process CALL_VARIANTS {
 
     # Subset BAM to differential peaks only
     bedtools intersect -abam ${dedup_bam} -b ${differential_peaks_bed} > ${sample.id}_diffbind.bam
-    samtools index ${sample.id}_diffbind.bam
+    samtools index -@ ${task.cpus} ${sample.id}_diffbind.bam
 
     # Tumor-only Mutect2 with germline resource + panel of normals
     gatk Mutect2 \\
         -R ${fasta} \\
         -I ${sample.id}_diffbind.bam \\
-        --native-pair-hmm-threads 8 \\
+        --native-pair-hmm-threads ${task.cpus} \\
         --germline-resource ${gnomad} \\
         --panel-of-normals ${pon} \\
         -O ${sample.id}.vcf
 
     # Atomize multi-allelic sites
-    bcftools norm --atomize -o ${sample.id}_decomposed.vcf ${sample.id}.vcf
+    bcftools norm --threads ${task.cpus} --atomize -o ${sample.id}_decomposed.vcf ${sample.id}.vcf
 
     # Drop alt-chromosome variants (chrUn_*, chr*_alt, etc.)
     awk '/^#/ || \$1 !~ /_/' ${sample.id}_decomposed.vcf > ${sample.id}_no-alt-chr.vcf

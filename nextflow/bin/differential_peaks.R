@@ -84,7 +84,10 @@ if (sys.nframe() == 0L && !interactive()) {
     suppressPackageStartupMessages({
         library(DiffBind)
         library(ggplot2)
+        library(BiocParallel)
     })
+
+    register(MulticoreParam(workers = args$threads))
 
     # Read pipeline samplesheet
     pipeline_ss <- read.csv(args$samplesheet, stringsAsFactors = FALSE)
