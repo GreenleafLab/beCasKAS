@@ -40,8 +40,8 @@ process PEAK_CALL {
 // =====================================================================================
 // KAS_STATISTICS -- cohort RPM ratio computation:
 //   1. KAS-Analyzer statistics aggregates per-sample summaries -> cohort summary
-//   2. append RPM column = 1,000,000 / Deduplicated_reads (column 4)
-//   3. extract the per-sample RPM column -> ratios.txt for normalization
+//   2. Fetch and append deduplicated reads (RPM = 1,000,000 / Deduplicated_reads)
+//   3. Extract the per-sample RPM column -> ratios.txt for normalization
 // =====================================================================================
 
 process KAS_STATISTICS {
@@ -72,23 +72,34 @@ process KAS_STATISTICS {
     # Cohort-level statistics
     KAS-Analyzer statistics -o KAS_statistics -s ./Summary
 
-    # Append RPM = 1,000,000 / Deduplicated_reads to each row
+    # Remove "Unique_reads" column (KAS-Analyzer v2.0.0)
+    # Re-fetch "Deduplicated reads" from per-sample summary files
     awk 'BEGIN { FS=OFS="\\t" }
-        NR==1 {
-            print \$0, "RPM"
-        }
-        NR > 1 {
-            if (\$4 > 0) {
-                rpm = 1000000 / \$4
-            } else {
-                rpm = 00
-            }
-            print \$0, rpm
-        }
-    ' Summary/KAS_statistics_summary.txt > Summary/KAS_statistics_summary_rpm.txt
+        NR==1 { for (i=1;i<=NF;i++) if (\$i=="Unique_reads") drop=i }
+        { out=""; for (i=1;i<=NF;i++) if (i!=drop) out=(out=="")?\$i:out OFS \$i; print out }
+    ' Summary/KAS_statistics_summary.txt > Summary/KAS_statistics_summary.clean.txt
+    mv Summary/KAS_statistics_summary.clean.txt Summary/KAS_statistics_summary.txt
 
-    # Extract the per-sample RPM column -> ratios.txt
-    awk -F"\\t" 'NR > 1 && NR <= ${n_samples + 1} {print \$7}' \\
+    for f in Summary/*mapping_summary.txt; do
+        s=\$(basename "\$f" .txt)
+        d=\$(grep "Number of deduplicated mapped reads" "\$f" | awk '{print \$6}')
+        printf '%s\\t%s\\n' "\$s" "\$d"
+    done > Summary/dedup_map.txt
+
+    # Join by the Samples column (order-independent) and append
+    # Deduplicated_reads + RPM (= 1,000,000 / Deduplicated_reads) columns.
+    awk 'BEGIN { FS=OFS="\\t" }
+        FNR==NR { dedup[\$1]=\$2; next }
+        FNR==1  { print \$0, "Deduplicated_reads", "RPM"; next }
+        {
+            d = dedup[\$1] + 0
+            rpm = (d > 0) ? 1000000 / d : 0
+            print \$0, d, rpm
+        }
+    ' Summary/dedup_map.txt Summary/KAS_statistics_summary.txt > Summary/KAS_statistics_summary_rpm.txt
+
+    # create ratios.txt
+    awk -F"\\t" 'NR > 1 && NR <= ${n_samples + 1} {print \$NF}' \\
         Summary/KAS_statistics_summary_rpm.txt > ratios.txt
 
     cp Summary/KAS_statistics_summary.txt     KAS_statistics_summary.txt
@@ -110,9 +121,9 @@ process NORMALIZE_BIGWIG {
     label 'process_medium'
 
     input:
-    path(bg_files)         // collected: all samples' .bg
-    path(ratios_file)      // ratios.txt with one RPM per sample line, in the same order as bg_files
-    path(labels_file)      // UCSC track labels
+    path(bg_files)
+    path(ratios_file)
+    path(labels_file)
     val genome_name
 
     output:

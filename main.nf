@@ -260,8 +260,9 @@ workflow {
             pon_tbi
         )
     }
+}
 
-    onComplete:
+workflow.onComplete {
     file("${params.outdir}/pipeline.running").delete()
     def marker = workflow.success ? 'pipeline.success' : 'pipeline.failure'
     file("${params.outdir}/${marker}").text = ''
