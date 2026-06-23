@@ -16,6 +16,10 @@ process PEAK_CALL {
     tuple val(sample), path("${sample.id}_input_macs2_peaks.bed"),          emit: peaks
     tuple val(sample), path("${sample.id}_input_macs2_peaks_abridged.bed"), emit: peaks_abridged
     tuple val(sample), path("${sample.id}_input_peaks.xls"),                emit: macs2_xls
+    tuple val(sample), path("${sample.id}_input_summits.bed"),              emit: summits,     optional: true
+    tuple val(sample), path("${sample.id}_input_peaks.narrowPeak"),         emit: narrowpeak,  optional: true
+    tuple val(sample), path("${sample.id}_input_output_macs2.log"),         emit: macs2_log,   optional: true
+    tuple val(sample), path("${sample.id}_input_model.r"),                  emit: macs2_model, optional: true
 
     script:
     """
@@ -129,6 +133,7 @@ process NORMALIZE_BIGWIG {
     output:
     path("*.nor.bigWig"),         emit: bigwigs
     path("*.nor.bg"),             emit: nor_bg
+    path("*.UCSC.bg.gz"),         emit: ucsc_bg, optional: true
     path("KAS-seq.txt"),          emit: bg_list
     path("UCSC_track_names.txt"), emit: ucsc_labels
 
@@ -167,6 +172,8 @@ process QC_METRICS {
 
     output:
     path("KAS-Seq_FRiP.txt"),       emit: frip,        optional: true
+    path("KAS-Seq_FRiP.png"),       emit: frip_png,    optional: true
+    path("KAS-Seq_FRiP.svg"),       emit: frip_svg,    optional: true
     path("all-deeptools.pdf"),      emit: correlation_pdf
     path("all.tab"),                emit: correlation_tab
     path("all.npz"),                emit: correlation_npz
