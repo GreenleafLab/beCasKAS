@@ -110,7 +110,7 @@ if (sys.nframe() == 0L && !interactive()) {
     # Run DiffBind
     samples <- dba(sampleSheet = dba_ss)
     count_args <- modifyList(
-        list(minOverlap = args$`min-overlap`, bParallel = TRUE),
+        list(minOverlap = args$`min-overlap`, bParallel = FALSE),
         resolve_diffbind_consts(dbp$`dba.count`))
     samples <- do.call(dba.count, c(list(samples), count_args))
 
@@ -125,7 +125,7 @@ if (sys.nframe() == 0L && !interactive()) {
 
     samples <- dba.contrast(samples, categories = DBA_CONDITION, minMembers = 2)
     analyze_args <- modifyList(
-        list(bRetrieveAnalysis = FALSE, bParallel = TRUE, bGreylist = greylist),
+        list(bRetrieveAnalysis = FALSE, bParallel = FALSE, bGreylist = greylist),
         resolve_diffbind_consts(dbp$`dba.analyze`))
     samples <- do.call(dba.analyze, c(list(samples), analyze_args))
     dba.show(samples, bContrasts = TRUE)
