@@ -17,6 +17,7 @@ process TRIM_ALIGN {
     tuple val(sample), path("BedGraph_files/${sample.id}.bg"),        emit: bg
     tuple val(sample), path("Summary/*"),                             emit: summary, optional: true
     path("*_fastqc.{zip,html}"),                                      emit: fastqc, optional: true
+    path("*_trimming_report.txt"),                                    emit: trim_report, optional: true
 
     script:
     """

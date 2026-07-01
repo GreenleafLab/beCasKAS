@@ -14,6 +14,8 @@ process DEDUP_CONSENSUS {
     tuple val(sample), path("${sample.id}_picard-gencore-dedup.bam"),     emit: bam
     tuple val(sample), path("${sample.id}_picard-gencore-dedup.bam.bai"), emit: bai
     tuple val(sample), path("${sample.id}_picard-gencore-dedup.html"),    emit: html
+    tuple val(sample), path("${sample.id}_marked_metrics.txt"),           emit: dup_metrics,  optional: true
+    tuple val(sample), path("gencore.json"),                              emit: gencore_json, optional: true
 
     script:
     """
