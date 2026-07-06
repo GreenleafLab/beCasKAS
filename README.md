@@ -109,6 +109,21 @@ CSV with columns: `sample_id`, `fastq_1`, `fastq_2`, `condition`, `replicate`, `
 | `replicate` | yes | Replicate number within condition |
 | `background_id` | conditional | sample_id of the `background` row used as MACS2 `-c` |
 
+### Supplying a pre-made control bed (`--background_bed`)
+
+If you already have the input/background control as a reads-level BED (the same
+format produced under `results/01_trim_align/<sample>/<sample>.bed`), pass it with
+`--background_bed /path/to/control.bed` to skip aligning the background entirely.
+
+- The `background` row stays in the samplesheet (treatments still reference it via
+  `background_id`), but its `fastq_1`/`fastq_2` cells may be left blank. See
+  [examples/samplesheet_background_bed_example.csv](examples/samplesheet_background_bed_example.csv).
+- The file must be a reads/fragments BED (what MACS2 consumes via `-c`), NOT a
+  peaks BED.
+- Only a single shared background is supported; the run errors if more than one
+  `background` row is present while `--background_bed` is set.
+- All non-background rows still require `fastq_1`/`fastq_2`.
+
 ## Staged Execution
 
 The pipeline runs in two stages, selected with `--stage`:

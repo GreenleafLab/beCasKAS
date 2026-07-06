@@ -27,8 +27,16 @@ workflow KAS_ANALYZER {
         .reduce([:]) { acc, cond -> acc[cond] = (acc[cond] ?: 0) + 1; acc }
         .set { ch_replicate_counts }
 
+    // When --background_bed is supplied, the background row's control bed is provided
+    // directly and that row is not aligned; otherwise every row is aligned as before.
+    def bg_bed = params.background_bed ? file(params.background_bed, checkIfExists: true) : null
+
+    ch_to_align = bg_bed
+        ? ch_samples.filter { sample, r1, r2 -> sample.condition != 'background' }
+        : ch_samples
+
     // Trim and align
-    TRIM_ALIGN(ch_samples, refdir)
+    TRIM_ALIGN(ch_to_align, refdir)
     ch_bam = TRIM_ALIGN.out.bam
     ch_bed = TRIM_ALIGN.out.bed
     ch_bg  = TRIM_ALIGN.out.bg
@@ -37,9 +45,11 @@ workflow KAS_ANALYZER {
     ch_treatments = ch_bed
         .filter { sample, bed -> sample.condition != 'background' }
         .map    { sample, bed -> [sample.background_id, sample, bed] }
-    ch_inputs = ch_bed
-        .filter { sample, bed -> sample.condition == 'background' }
-        .map    { sample, bed -> [sample.id, bed] }
+    ch_inputs = bg_bed
+        ? ch_samples.filter { sample, r1, r2 -> sample.condition == 'background' }
+                    .map    { sample, r1, r2 -> [sample.id, bg_bed] }
+        : ch_bed.filter { sample, bed -> sample.condition == 'background' }
+                .map    { sample, bed -> [sample.id, bed] }
     ch_bed_for_peaks = ch_treatments
         .combine(ch_inputs, by: 0)
         .map { ctrl_id, sample, sample_bed, ctrl_bed -> tuple(sample, sample_bed, ctrl_bed) }
@@ -231,9 +241,32 @@ workflow {
                 replicate:     replicate,
                 background_id: background_id ?: ''
             ]
-            tuple(sample, file(fastq_1), file(fastq_2))
+            // A background row may omit fastqs when --background_bed supplies its control bed;
+            // every other row must be aligned, so its fastqs are required here (the schema no
+            // longer enforces this).
+            def needs_fastq = !(params.background_bed && condition == 'background')
+            if (needs_fastq && (!fastq_1 || !fastq_2)) {
+                error("Sample '${sample_id}' (condition '${condition}') is missing fastq_1/fastq_2. " +
+                      "Provide both FASTQs, or supply --background_bed and mark this row as 'background'.")
+            }
+            def f1 = fastq_1 ? file(fastq_1) : null
+            def f2 = fastq_2 ? file(fastq_2) : null
+            tuple(sample, f1, f2)
         }
         .set { ch_samples }
+
+    // --background_bed is a single file; it cannot disambiguate multiple background rows.
+    if (params.background_bed) {
+        ch_samples
+            .filter { sample, r1, r2 -> sample.condition == 'background' }
+            .map    { sample, r1, r2 -> sample.id }
+            .collect()
+            .subscribe { ids ->
+                if (ids.size() > 1)
+                    error("--background_bed supports a single shared background, but the samplesheet " +
+                          "has ${ids.size()} background rows: ${ids}. Use one background row, or omit --background_bed.")
+            }
+    }
 
     // Run Stage One
     KAS_ANALYZER(ch_samples, file(refdir), fasta, fasta_fai)

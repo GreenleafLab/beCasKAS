@@ -21,6 +21,11 @@
                     "format": "directory-path",
                     "default": "results",
                     "description": "Output directory"
+                },
+                "background_bed": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Optional reads-level BED used as the MACS2 -c control, replacing alignment of the samplesheet background row. When set, the background row is not aligned and its fastq_1/fastq_2 may be blank. Supports a single shared background only."
                 }
             }
         },

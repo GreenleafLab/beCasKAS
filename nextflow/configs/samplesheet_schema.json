@@ -6,7 +6,7 @@
     "type": "array",
     "items": {
         "type": "object",
-        "required": ["sample_id", "fastq_1", "fastq_2", "condition", "replicate"],
+        "required": ["sample_id", "condition", "replicate"],
         "properties": {
             "sample_id": {
                 "type": "string",
