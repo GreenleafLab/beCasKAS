@@ -64,6 +64,7 @@ From: mambaorg/micromamba:1.5.8
     gatk --version | head -1
     bcftools --version | head -1
     bedtools --version
+    guidescan --version
     bedGraphToBigWig 2>&1 | head -1 || true
     /opt/KAS-Analyzer/src/SAMtoBED --help > /dev/null 2>&1 || /opt/KAS-Analyzer/src/SAMtoBED -h > /dev/null 2>&1 || true
     head -1 /opt/KAS-Analyzer/src/SAMtoBED | grep -q 'python3'
