@@ -9,6 +9,7 @@ include { DEDUP_CONSENSUS }                                                  fro
 include { SPLIT_BAM_PSEUDOREPS }                                             from './nextflow/modules/split_bam_pseudoreps'
 include { BUILD_DIFFBIND_SAMPLESHEET; DIFFERENTIAL_PEAKS }                   from './nextflow/modules/differential_peaks'
 include { CALL_VARIANTS }                                                    from './nextflow/modules/mutect2_call_variants'
+include { GUIDESCAN_BINDING_SITES }                                          from './nextflow/modules/guidescan'
 
 // Stage One
 workflow KAS_ANALYZER {
@@ -190,6 +191,13 @@ workflow DIFFERENTIAL {
         pon,
         pon_tbi
     )
+
+    // GuideScan2 gRNA binding-site prediction: optional, independent of variant
+    // calling -- both branch off DIFFERENTIAL_PEAKS.out.bed. Skipped entirely
+    // unless --guidescan_grna is set.
+    if (params.guidescan_grna) {
+        GUIDESCAN_BINDING_SITES(DIFFERENTIAL_PEAKS.out.bed, fasta, fasta_fai)
+    }
 }
 
 // Workflow Entry

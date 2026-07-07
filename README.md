@@ -150,6 +150,18 @@ then run the differential stage, passing the file with `--diffbind_params`:
 ```
 Only the overridden case's `DIFFERENTIAL_PEAKS` and its downstream will re-execute. All other cases and every upstream stage will resume from cache.
 
+## Predicting gRNA Binding Sites
+
+Given a base editor gRNA (protospacer + PAM), `GUIDESCAN_BINDING_SITES` searches
+each case's differential peaks for the most likely gRNA binding site, via
+GuideScan2 and CFD scoring. The `--guidescan_grna` parameter is required to run this step (example grna sequence below):
+
+```bash
+nextflow run main.nf --stage diffbind -resume \
+    --guidescan_grna CCCTACCTGTCACCAGGACC --guidescan_pam NGG \
+    --samplesheet samples.csv --refdir /path/to/refs --outdir results/
+```
+
 ## Output
 
 ```
@@ -164,6 +176,7 @@ results/
     samplesheets/                          # diffbind_samplesheet_<case>.csv (editable; --diffbind_samplesheet_dir)
     <case>/                                # differential_peaks.bed, full TSV, volcano, dba_object.rds, method.txt
   07_variants/<case>/${sample_id}/         # *.vcf, *_no-alt-chr.vcf, *_CT.vcf, *_AG.vcf
+  08_guidescan/<case>/                     # binding_sites.tsv
   pipeline_info/                           # execution_report, timeline, trace, DAG SVG
 ```
 
@@ -171,7 +184,7 @@ results/
 
 The pipeline is split into two sub-workflows (selectable with `--stage`, see [Staged Execution](#staged-execution)):
 - **`KAS_ANALYZER`** (stage 1) - steps 1-8
-- **`DIFFERENTIAL`** (stage 2) - steps 9-10
+- **`DIFFERENTIAL`** (stage 2) - steps 9-11
 
 | # | Process | Workflow | Source file | Description |
 |---|---|---|---|---|
@@ -185,6 +198,7 @@ The pipeline is split into two sub-workflows (selectable with `--stage`, see [St
 | 8 | `BUILD_DIFFBIND_SAMPLESHEET` | KAS_ANALYZER | `differential_peaks.nf` | Fan the cohort into one DiffBind samplesheet per treatment case (stage 1 stops here) |
 | 9 | `DIFFERENTIAL_PEAKS` | DIFFERENTIAL | `differential_peaks.nf` | DiffBind (DESeq2 backend); one control-vs-case contrast per case, output under `06_differential/<case>/` |
 | 10 | `CALL_VARIANTS` | DIFFERENTIAL | `mutect2_call_variants.nf` | Mutect2 tumor-only + germline + PoN, per case, restricted to that case's differential peaks |
+| 11 | `GUIDESCAN_BINDING_SITES` | DIFFERENTIAL | `guidescan.nf` | GuideScan2 enumerate + CFD; most-likely gRNA binding site per differential peak (requires `--guidescan_grna`) |
 
 ## Replicate Handling
 
@@ -212,11 +226,17 @@ Key parameters and their defaults:
 | `--seed` | 42 | Global random seed |
 | `--diffbind_params` | (none) | JSON file of per-case DiffBind overrides for stage 2 (see [Adjusting Differential Expression Parameters](#adjusting-differential-expression-parameters)) |
 | `--diffbind_samplesheet_dir` | (none) | Directory of edited per-case samplesheets for stage 2 (see [Staged execution](#staged-execution)) |
+| `--guidescan_grna` | (none) | gRNA spacer (20 nt, no PAM); GuideScan2 step runs only when set (see [Predicting gRNA Binding Sites](#predicting-grna-binding-sites)) |
+| `--guidescan_pam` | NGG | PAM pattern (N = wildcard) |
+| `--guidescan_mismatches` | 10 | Max mismatches in the spacer |
+| `--guidescan_rna_bulges` | 2 | Max 1-nt RNA bulges |
+| `--guidescan_dna_bulges` | 2 | Max 1-nt DNA bulges |
+| `--guidescan_chunk_size` | 15 | Peaks processed together as one GuideScan2 index+enumerate unit |
 
 ## Tool dependencies
 
 Tool dependencies and pinned versions live in:
-- [env/env.yaml](env/env.yaml) - conda environment spec (bioinformatics tools: BWA, samtools, bcftools, bedtools, MACS2, trim_galore, FastQC, deepTools, picard, gencore, GATK4, UCSC bedGraphToBigWig).
+- [env/env.yaml](env/env.yaml) - conda environment spec (bioinformatics tools: BWA, samtools, bcftools, bedtools, MACS2, trim_galore, FastQC, deepTools, picard, gencore, GATK4, GuideScan2, UCSC bedGraphToBigWig).
 - KAS-Analyzer 2.0.0 is cloned from `https://github.com/Ruitulyu/KAS-Analyzer.git`
 
 ## Citation

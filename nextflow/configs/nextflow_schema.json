@@ -117,6 +117,45 @@
                 }
             }
         },
+        "guidescan_options": {
+            "title": "guidescan step (optional)",
+            "type": "object",
+            "properties": {
+                "guidescan_grna": {
+                    "type": "string",
+                    "description": "gRNA spacer sequence (20 nt, no PAM) to search for within each case's differential peaks via GuideScan2. When unset (default), the GUIDESCAN_BINDING_SITES step does not run."
+                },
+                "guidescan_pam": {
+                    "type": "string",
+                    "default": "NGG",
+                    "description": "PAM pattern (N = wildcard)"
+                },
+                "guidescan_mismatches": {
+                    "type": "integer",
+                    "default": 10,
+                    "minimum": 0,
+                    "description": "Max mismatches in the spacer"
+                },
+                "guidescan_rna_bulges": {
+                    "type": "integer",
+                    "default": 2,
+                    "minimum": 0,
+                    "description": "Max 1-nt RNA bulges"
+                },
+                "guidescan_dna_bulges": {
+                    "type": "integer",
+                    "default": 2,
+                    "minimum": 0,
+                    "description": "Max 1-nt DNA bulges"
+                },
+                "guidescan_chunk_size": {
+                    "type": "integer",
+                    "default": 15,
+                    "minimum": 1,
+                    "description": "Peaks processed together as one GuideScan2 index+enumerate unit"
+                }
+            }
+        },
         "resource_options": {
             "title": "Resource caps",
             "type": "object",
@@ -169,6 +208,7 @@
         {"$ref": "#/definitions/staging_options"},
         {"$ref": "#/definitions/differential_peaks_options"},
         {"$ref": "#/definitions/reproducibility_options"},
+        {"$ref": "#/definitions/guidescan_options"},
         {"$ref": "#/definitions/resource_options"},
         {"$ref": "#/definitions/generic_options"}
     ]
