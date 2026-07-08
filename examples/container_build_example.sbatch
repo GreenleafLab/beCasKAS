@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=becaskas-sif-build
-#SBATCH --time=02:00:00
+#SBATCH --time=04:00:00
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=48G
 #SBATCH --partition=normal
@@ -15,5 +15,5 @@ mkdir -p "$APPTAINER_TMPDIR" "$APPTAINER_CACHEDIR"
 # Path to beCasKAS repository
 cd $HOME/software/beCasKAS
 apptainer build --fakeroot \
-    "$GROUP_SCRATCH/$USER/becaskas.sif" \
+    becaskas.sif \
     env/becaskas.def
