@@ -42,6 +42,12 @@ From: mambaorg/micromamba:1.5.8
     micromamba clean --all --yes
     export PATH=/opt/conda/bin:$PATH
 
+    # GenomeInfoDb hard-depends on the GenomeInfoDbData companion package, which binary/annotation
+    # installs can silently omit and which breaks the whole DiffBind -> GenomicRanges stack at load.
+    # Install it if absent, then fail the build if the stack still cannot load.
+    Rscript -e 'if (!requireNamespace("GenomeInfoDbData", quietly = TRUE)) BiocManager::install("GenomeInfoDbData", update = FALSE, ask = FALSE, type = "source")'
+    Rscript -e 'stopifnot(requireNamespace("GenomeInfoDbData", quietly = TRUE)); library(DiffBind); cat("DiffBind stack OK\n")'
+
     # KAS-Analyzer 2.0.0
     git clone --depth 1 --branch v2.0.0 https://github.com/Ruitulyu/KAS-Analyzer.git /opt/KAS-Analyzer
     chmod +x /opt/KAS-Analyzer/KAS-pipe2
@@ -51,6 +57,7 @@ From: mambaorg/micromamba:1.5.8
     Rscript -e 'remotes::install_github("kassambara/easyGgplot2", upgrade = "never")'
 
 %environment
+    export MAMBA_ROOT_PREFIX=/opt/conda
     export PATH=/opt/KAS-Analyzer:/opt/conda/bin:$PATH
 
 %test
@@ -68,6 +75,7 @@ From: mambaorg/micromamba:1.5.8
     bedGraphToBigWig 2>&1 | head -1 || true
     /opt/KAS-Analyzer/src/SAMtoBED --help > /dev/null 2>&1 || /opt/KAS-Analyzer/src/SAMtoBED -h > /dev/null 2>&1 || true
     head -1 /opt/KAS-Analyzer/src/SAMtoBED | grep -q 'python3'
+    Rscript -e 'stopifnot(requireNamespace("GenomeInfoDbData", quietly = TRUE))'
     Rscript -e 'library(DiffBind); cat(as.character(packageVersion("DiffBind")), "\n")'
     Rscript -e 'library(devtools); library(easyGgplot2); cat("easyGgplot2 OK\n")'
 
