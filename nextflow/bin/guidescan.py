@@ -318,7 +318,7 @@ def process_chunk(job):
         run([guidescan, "index", "--index", idxp, peaks_fa])
         run([guidescan, "enumerate",
              "-m", mismatches, "--rna-bulges", rna_b, "--dna-bulges", dna_b,
-             "--format", "csv", "--mode", "complete", "-n", threads,
+             "--format", "csv", "-n", threads,
              "-f", kmers, "-o", enum, idxp])
         best = rank_hits(enum, name_meta, guide, pam)
         return best, name_meta

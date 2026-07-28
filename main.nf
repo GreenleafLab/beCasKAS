@@ -168,6 +168,15 @@ workflow DIFFERENTIAL {
     }
     DIFFERENTIAL_PEAKS(ch_diff_jobs)
 
+    ch_diff_bed = DIFFERENTIAL_PEAKS.out.bed.branch { case_id, bed ->
+        with_peaks: bed.size() > 0
+        no_peaks  : true
+    }
+    ch_diff_bed.no_peaks.subscribe { case_id, bed ->
+        log.warn "DIFFERENTIAL: case '${case_id}' has no peaks passing the FDR/LFC " +
+                 "filter -- skipping CALL_VARIANTS and GUIDESCAN_BINDING_SITES"
+    }
+
     // Per-case variant calling:
     ch_cases_only = ch_case_samplesheets.map { case_id, ss -> case_id }
     ch_ctrl_by_case = ch_dedup
@@ -178,7 +187,7 @@ workflow DIFFERENTIAL {
         .filter { sample, bam, bai -> sample.condition != 'control' }
         .map { sample, bam, bai -> tuple(sample.condition, sample, bam, bai) }
     ch_variant_jobs = ch_ctrl_by_case.mix(ch_trt_by_case)
-        .combine(DIFFERENTIAL_PEAKS.out.bed, by: 0)
+        .combine(ch_diff_bed.with_peaks, by: 0)
         .map { case_id, sample, bam, bai, bed -> tuple(case_id, sample, bam, bai, bed) }
 
     CALL_VARIANTS(
@@ -196,7 +205,7 @@ workflow DIFFERENTIAL {
     // calling -- both branch off DIFFERENTIAL_PEAKS.out.bed. Skipped entirely
     // unless --guidescan_grna is set.
     if (params.guidescan_grna) {
-        GUIDESCAN_BINDING_SITES(DIFFERENTIAL_PEAKS.out.bed, fasta, fasta_fai)
+        GUIDESCAN_BINDING_SITES(ch_diff_bed.with_peaks, fasta, fasta_fai)
     }
 }
 
