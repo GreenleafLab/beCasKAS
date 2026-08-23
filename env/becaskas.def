@@ -41,10 +41,6 @@ From: mambaorg/micromamba:1.5.8
     micromamba install -y -n base -f /opt/build/env.yaml
     micromamba clean --all --yes
     export PATH=/opt/conda/bin:$PATH
-
-    # GenomeInfoDb hard-depends on the GenomeInfoDbData companion package, which binary/annotation
-    # installs can silently omit and which breaks the whole DiffBind -> GenomicRanges stack at load.
-    # Install it if absent, then fail the build if the stack still cannot load.
     Rscript -e 'if (!requireNamespace("GenomeInfoDbData", quietly = TRUE)) BiocManager::install("GenomeInfoDbData", update = FALSE, ask = FALSE, type = "source")'
     Rscript -e 'stopifnot(requireNamespace("GenomeInfoDbData", quietly = TRUE)); library(DiffBind); cat("DiffBind stack OK\n")'
 
