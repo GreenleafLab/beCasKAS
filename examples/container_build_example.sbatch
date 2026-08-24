@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=becaskas-sif-build
 #SBATCH --time=04:00:00
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=24
 #SBATCH --mem=48G
-#SBATCH --partition=normal
+#SBATCH --partition=normal,biochem,sfgf,wjg
 #SBATCH --output=becaskas-sif-build-%j.out
 #SBATCH --error=becaskas-sif-build-%j.err
 set -euo pipefail

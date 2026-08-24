@@ -171,6 +171,15 @@
                 "max_time": {
                     "type": "string",
                     "default": "48.h"
+                },
+                "partition": {
+                    "type": "string",
+                    "default": "sfgf,wjg,biochem,normal",
+                    "description": "SLURM partition(s) for task jobs; a comma-separated list is allowed"
+                },
+                "clusterOptions": {
+                    "type": "string",
+                    "description": "Extra raw flags appended to every task's sbatch call, e.g. '--qos=long'"
                 }
             }
         },

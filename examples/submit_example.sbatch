@@ -3,8 +3,8 @@
 # Submission job for the beCasKAS Nextflow pipeline on a SLURM cluster.
 #
 #SBATCH --job-name=beCasKAS
-#SBATCH --partition=normal              # Customize partition name
-#SBATCH --time=48:00:00                 # Customize walltime
+#SBATCH --partition=sfgf,wjg,biochem,normal   # Customize partitions
+#SBATCH --time=48:00:00                       # Customize walltime
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=16G
 #SBATCH --output=logs/%x-%j.out
@@ -17,7 +17,7 @@ module load java
 module load biology nextflow
 
 RUN_DIR="${SCRATCH:-$PWD}/beCasKAS/${SLURM_JOB_ID}"
-mkdir -p "${RUN_DIR}"
+mkdir -p "${RUN_DIR}/logs"
 cd "${RUN_DIR}"
 
 # Modify to match your input/output structure
@@ -30,4 +30,5 @@ nextflow run "${PIPELINE_DIR}/main.nf" \
     --samplesheet "${SAMPLESHEET}" \
     --refdir "${REFERENCE_DIR}" \
     --outdir results \
+    -with-trace \
     -resume
