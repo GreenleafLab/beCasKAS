@@ -123,36 +123,63 @@
             "properties": {
                 "guidescan_grna": {
                     "type": "string",
-                    "description": "gRNA spacer sequence (20 nt, no PAM) to search for within each case's differential peaks via GuideScan2. When unset (default), the GUIDESCAN_BINDING_SITES step does not run."
+                    "description": "gRNA spacer (20 nt, no PAM) to search for in each case's differential peaks. When unset and no --guidescan_params is given, neither guidescan stage runs. For cases targeting different loci, set the spacer per case via --guidescan_params; this is the fallback for cases that JSON does not name."
                 },
                 "guidescan_pam": {
                     "type": "string",
                     "default": "NGG",
                     "description": "PAM pattern (N = wildcard)"
                 },
+                "guidescan_seed": {
+                    "type": "string",
+                    "description": "Stage 1 seed: a substring of spacer+PAM that must match exactly ('N' = wildcard) for a peak to be anchored and scored. Defaults to the PAM-proximal 5 nt of the spacer plus the PAM (GGCACTGCGGCTGGAGGTGG + NGG -> GGTGGNGG). Longer is faster but leaves more peaks for stage 2; shorter is more sensitive but slower."
+                },
                 "guidescan_mismatches": {
                     "type": "integer",
                     "default": 10,
                     "minimum": 0,
-                    "description": "Max mismatches in the spacer"
+                    "description": "Stage 1: discard a scored site with more than this many mismatches. Applied after scoring, as a filter -- stage 1 does not search, so raising it costs nothing."
                 },
                 "guidescan_rna_bulges": {
                     "type": "integer",
                     "default": 2,
                     "minimum": 0,
-                    "description": "Max 1-nt RNA bulges"
+                    "description": "Max 1-nt RNA bulges (both stages)"
                 },
                 "guidescan_dna_bulges": {
                     "type": "integer",
                     "default": 2,
                     "minimum": 0,
-                    "description": "Max 1-nt DNA bulges"
+                    "description": "Max 1-nt DNA bulges (both stages)"
                 },
                 "guidescan_chunk_size": {
                     "type": "integer",
+                    "default": 150,
+                    "minimum": 1,
+                    "description": "Stage 1: peaks processed together as one padded-extraction unit"
+                },
+                "guidescan_summit_width": {
+                    "type": "integer",
+                    "default": 0,
+                    "minimum": 0,
+                    "description": "Stage 1: if >0, restrict the seed search to the centre N bp of each peak. LEAVE AT 0 (full peak) unless you have a specific reason -- a width of 100 was measured to miss the true on-target site in HEK4, HEK4_noSort, and CD7 (chr17:82316661-82316683 in peak chr17:82316540-82316940): the anchor was found but fell out of bounds for scoring."
+                },
+                "skip_guidescan_enumerate": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Skip stage 2, leaving stage 1's seed-anchored results as the only guidescan output. Stage 2 runs by default and recovers sites whose mismatch falls inside the seed, but it is orders of magnitude more expensive than stage 1 -- skip it for a fast first pass, or when a case's unanchored-peak count makes the runtime impractical."
+                },
+                "guidescan_enumerate_mismatches": {
+                    "type": "integer",
+                    "default": 8,
+                    "minimum": 0,
+                    "description": "Stage 2 search budget -- separate from --guidescan_mismatches and deliberately lower, since cost grows as C(20,m)*3^m (~28M at m=6, ~826M at m=8, ~10.9B at m=10). 8 because at m=6 the mismatch distribution was still rising at the ceiling. DO NOT RAISE TO 10: a 150-peak run emitted 17.6M rows / 1.8 GB and did not finish in 2.5 h."
+                },
+                "guidescan_enumerate_chunk_size": {
+                    "type": "integer",
                     "default": 15,
                     "minimum": 1,
-                    "description": "Peaks processed together as one GuideScan2 index+enumerate unit"
+                    "description": "Stage 2: peaks per GuideScan2 index+enumerate unit. Small on purpose -- each chunk's enum.csv is parsed single-threaded, so smaller chunks parallelise the scoring too."
                 }
             }
         },

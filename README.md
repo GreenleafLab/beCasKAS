@@ -152,13 +152,38 @@ Only the overridden case's `DIFFERENTIAL_PEAKS` and its downstream will re-execu
 
 ## Predicting gRNA Binding Sites
 
-Given a base editor gRNA (protospacer + PAM), `GUIDESCAN_BINDING_SITES` searches
-each case's differential peaks for the most likely gRNA binding site, via
-GuideScan2 and CFD scoring. The `--guidescan_grna` parameter is required to run this step (example grna sequence below):
+Set `--guidescan_grna` to enable these steps.
+
+Given a base editor gRNA (protospacer + PAM), the pipeline reports the most likely
+binding site per differential peak, via GuideScan2 and CFD scoring, in two stages:
+
+**Stage 1 - `GUIDESCAN_SEED`** Greps each peak and its reverse
+complement for an exact *seed* match (a substring of spacer + PAM: by default the
+PAM-proximal 5 nt plus the PAM, so `GGCACTGCGGCTGGAGGTGG` + `NGG` -> `GGTGGNGG`).
+Peaks with no hit are reported with `seed_hits = 0`.
+
+**Stage 2 - `GUIDESCAN_ENUMERATE`** Runs GuideScan2 `enumerate` over the `seed_hits == 0` peaks. This step is computationally expensive for large differential peak sets: pass `--skip_guidescan_enumerate` to skip the second stage for a fast first pass of stage 1 alone.
+
 
 ```bash
 nextflow run main.nf --stage diffbind -resume \
     --guidescan_grna CCCTACCTGTCACCAGGACC --guidescan_pam NGG \
+    --samplesheet samples.csv --refdir /path/to/refs --outdir results/
+```
+
+A single `--guidescan_grna` applies globally to every case in the run. For multi-case runs that require separate binding sequences, write a `guidescan_params.json` keyed by `case_id`:
+```
+{
+  "ABE8e_HEK4": { "grna": "GGCACTGCGGCTGGAGGTGG" },
+  "ABE8e_CD7":  { "grna": "CCCTACCTGTCACCAGGACC" }
+}
+```
+Other overridable parameters include: `pam`, `seed`, `mismatches`, `rna_bulges`,
+`dna_bulges`, `chunk_size`, `summit_width`, `enumerate_mismatches`, `enumerate_chunk_size`
+
+```bash
+nextflow run main.nf --stage diffbind -resume \
+    --guidescan_params guidescan_params.json \
     --samplesheet samples.csv --refdir /path/to/refs --outdir results/
 ```
 
@@ -176,7 +201,7 @@ results/
     samplesheets/                          # diffbind_samplesheet_<case>.csv (editable; --diffbind_samplesheet_dir)
     <case>/                                # differential_peaks.bed, full TSV, volcano, dba_object.rds, method.txt
   07_variants/<case>/${sample_id}/         # *.vcf, *_no-alt-chr.vcf, *_CT.vcf, *_AG.vcf
-  08_guidescan/<case>/                     # binding_sites.tsv
+  08_guidescan/<case>/                     # binding_sites_seed.tsv, binding_sites_enumerate.tsv
   pipeline_info/                           # execution_report, timeline, trace, DAG SVG
 ```
 
@@ -184,7 +209,7 @@ results/
 
 The pipeline is split into two sub-workflows (selectable with `--stage`, see [Staged Execution](#staged-execution)):
 - **`KAS_ANALYZER`** (stage 1) - steps 1-8
-- **`DIFFERENTIAL`** (stage 2) - steps 9-11
+- **`DIFFERENTIAL`** (stage 2) - steps 9-12
 
 | # | Process | Workflow | Source file | Description |
 |---|---|---|---|---|
@@ -198,7 +223,8 @@ The pipeline is split into two sub-workflows (selectable with `--stage`, see [St
 | 8 | `BUILD_DIFFBIND_SAMPLESHEET` | KAS_ANALYZER | `differential_peaks.nf` | Fan the cohort into one DiffBind samplesheet per treatment case (stage 1 stops here) |
 | 9 | `DIFFERENTIAL_PEAKS` | DIFFERENTIAL | `differential_peaks.nf` | DiffBind (DESeq2 backend); one control-vs-case contrast per case, output under `06_differential/<case>/` |
 | 10 | `CALL_VARIANTS` | DIFFERENTIAL | `mutect2_call_variants.nf` | Mutect2 tumor-only + germline + PoN, per case, restricted to that case's differential peaks |
-| 11 | `GUIDESCAN_BINDING_SITES` | DIFFERENTIAL | `guidescan.nf` | GuideScan2 enumerate + CFD; most-likely gRNA binding site per differential peak (requires `--guidescan_grna`) |
+| 11 | `GUIDESCAN_SEED` | DIFFERENTIAL | `guidescan.nf` | Stage 1: exact-seed grep + bounded-DP CFD scoring; most-likely gRNA binding site per differential peak (requires `--guidescan_grna` or `--guidescan_params`) |
+| 12 | `GUIDESCAN_ENUMERATE` | DIFFERENTIAL | `guidescan.nf` | Stage 2: GuideScan2 enumerate + CFD over just the peaks stage 1 could not anchor (disable with `--skip_guidescan_enumerate`) |
 
 ## Replicate Handling
 
@@ -226,12 +252,18 @@ Key parameters and their defaults:
 | `--seed` | 42 | Global random seed |
 | `--diffbind_params` | (none) | JSON file of per-case DiffBind overrides for stage 2 (see [Adjusting Differential Expression Parameters](#adjusting-differential-expression-parameters)) |
 | `--diffbind_samplesheet_dir` | (none) | Directory of edited per-case samplesheets for stage 2 (see [Staged execution](#staged-execution)) |
-| `--guidescan_grna` | (none) | gRNA spacer (20 nt, no PAM); GuideScan2 step runs only when set (see [Predicting gRNA Binding Sites](#predicting-grna-binding-sites)) |
+| `--guidescan_grna` | (none) | gRNA spacer (20 nt, no PAM); guidescan runs only when this or `--guidescan_params` is set (see [Predicting gRNA Binding Sites](#predicting-grna-binding-sites)) |
+| `--guidescan_params` | (none) | JSON file of per-case gRNA/seed overrides, for runs whose cases target different loci |
 | `--guidescan_pam` | NGG | PAM pattern (N = wildcard) |
-| `--guidescan_mismatches` | 10 | Max mismatches in the spacer |
-| `--guidescan_rna_bulges` | 2 | Max 1-nt RNA bulges |
-| `--guidescan_dna_bulges` | 2 | Max 1-nt DNA bulges |
-| `--guidescan_chunk_size` | 15 | Peaks processed together as one GuideScan2 index+enumerate unit |
+| `--guidescan_seed` | (derived) | Stage-1 seed; defaults to the PAM-proximal 5 nt of the spacer + the PAM |
+| `--guidescan_mismatches` | 10 | Stage 1: max mismatches, applied as a post-scoring filter (not a search budget) |
+| `--guidescan_rna_bulges` | 2 | Max 1-nt RNA bulges (both stages) |
+| `--guidescan_dna_bulges` | 2 | Max 1-nt DNA bulges (both stages) |
+| `--guidescan_chunk_size` | 150 | Stage 1: peaks per padded-extraction unit |
+| `--guidescan_summit_width` | 0 | Stage 1: restrict the seed search to the central N bp of each peak; 0 = full peak (**leave at 0**, see the warning above) |
+| `--skip_guidescan_enumerate` | false | Skip stage 2 (GuideScan2 enumerate), leaving stage 1's seed-anchored results only |
+| `--guidescan_enumerate_mismatches` | 8 | Stage 2 search budget; separate from `--guidescan_mismatches` and deliberately lower |
+| `--guidescan_enumerate_chunk_size` | 15 | Stage 2: peaks per GuideScan2 index+enumerate unit |
 
 ## Tool dependencies
 

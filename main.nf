@@ -9,7 +9,7 @@ include { DEDUP_CONSENSUS }                                                  fro
 include { SPLIT_BAM_PSEUDOREPS }                                             from './nextflow/modules/split_bam_pseudoreps'
 include { BUILD_DIFFBIND_SAMPLESHEET; DIFFERENTIAL_PEAKS }                   from './nextflow/modules/differential_peaks'
 include { CALL_VARIANTS }                                                    from './nextflow/modules/mutect2_call_variants'
-include { GUIDESCAN_BINDING_SITES }                                          from './nextflow/modules/guidescan'
+include { GUIDESCAN_SEED; GUIDESCAN_ENUMERATE; resolveGuidescanParams }      from './nextflow/modules/guidescan'
 
 // Stage One
 workflow KAS_ANALYZER {
@@ -174,7 +174,7 @@ workflow DIFFERENTIAL {
     }
     ch_diff_bed.no_peaks.subscribe { case_id, bed ->
         log.warn "DIFFERENTIAL: case '${case_id}' has no peaks passing the FDR/LFC " +
-                 "filter -- skipping CALL_VARIANTS and GUIDESCAN_BINDING_SITES"
+                 "filter -- skipping CALL_VARIANTS and both guidescan stages"
     }
 
     // Per-case variant calling:
@@ -201,11 +201,27 @@ workflow DIFFERENTIAL {
         pon_tbi
     )
 
-    // GuideScan2 gRNA binding-site prediction: optional, independent of variant
-    // calling -- both branch off DIFFERENTIAL_PEAKS.out.bed. Skipped entirely
-    // unless --guidescan_grna is set.
-    if (params.guidescan_grna) {
-        GUIDESCAN_BINDING_SITES(ch_diff_bed.with_peaks, fasta, fasta_fai)
+    // Two-stage gRNA binding-site prediction
+    if (params.guidescan_grna || params.guidescan_params) {
+        def guidescanOverrides = params.guidescan_params
+            ? new groovy.json.JsonSlurper().parseText(file(params.guidescan_params, checkIfExists: true).text)
+            : [:]
+
+        ch_guidescan_jobs = ch_diff_bed.with_peaks
+            .map    { case_id, bed -> tuple(case_id, bed, resolveGuidescanParams(guidescanOverrides, case_id)) }
+            .filter { case_id, bed, gs -> gs != null }
+        GUIDESCAN_SEED(ch_guidescan_jobs, fasta, fasta_fai)
+
+        if (!params.skip_guidescan_enumerate) {
+            ch_no_seed = GUIDESCAN_SEED.out.no_seed_bed.branch { case_id, bed, gs ->
+                with_residue: bed.size() > 0
+                empty       : true
+            }
+            ch_no_seed.empty.subscribe { case_id, bed, gs ->
+                log.info "GUIDESCAN: case '${case_id}' has no unanchored peaks -- skipping enumerate"
+            }
+            GUIDESCAN_ENUMERATE(ch_no_seed.with_residue, fasta, fasta_fai)
+        }
     }
 }
 
