@@ -29,7 +29,7 @@ process DEDUP_CONSENSUS {
         RGLB=lib1 \\
         RGPL=ILLUMINA \\
         RGPU=unit1 \\
-        RGSM=20
+        RGSM=${sample.id}
 
     # Mark duplicates
     picard MarkDuplicates \\

@@ -202,29 +202,33 @@ results/
     <case>/                                # differential_peaks.bed, full TSV, volcano, dba_object.rds, method.txt
   07_variants/<case>/${sample_id}/         # *.vcf, *_no-alt-chr.vcf, *_CT.vcf, *_AG.vcf
   08_guidescan/<case>/                     # binding_sites_seed.tsv, binding_sites_enumerate.tsv
+  09_variants_subtracted/<case>/           # <case>_vs_control_relcontrol*.vcf
+  10_protospacer/                          # cohort figures + CSVs
   pipeline_info/                           # execution_report, timeline, trace, DAG SVG
 ```
 
 ## Pipeline Structure
 
 The pipeline is split into two sub-workflows (selectable with `--stage`, see [Staged Execution](#staged-execution)):
-- **`KAS_ANALYZER`** (stage 1) - steps 1-8
-- **`DIFFERENTIAL`** (stage 2) - steps 9-12
+- **`KAS_ANALYZER`** (stage 1) - trim/align through the per-case DiffBind samplesheets
+- **`DIFFERENTIAL`** (stage 2) - differential peaks, variants, guidescan, protospacer
 
-| # | Process | Workflow | Source file | Description |
-|---|---|---|---|---|
-| 1 | `TRIM_ALIGN` | KAS_ANALYZER | `trim_align.nf` | trim_galore + KAS-Analyzer KAS-seq (Bowtie2, KAS-Analyzer's default aligner) |
-| 2 | `PEAK_CALL` | KAS_ANALYZER | `analyze.nf` | MACS2 via KAS-Analyzer (`--macs2_mode`), treatment vs background |
-| 3 | `KAS_STATISTICS` | KAS_ANALYZER | `analyze.nf` | Cohort RPM statistics -> ratios.txt |
-| 4 | `NORMALIZE_BIGWIG` | KAS_ANALYZER | `analyze.nf` | RPM-ratio normalized bedGraph + UCSC bigWig |
-| 5 | `QC_METRICS` | KAS_ANALYZER | `analyze.nf` | FRiP + multiBigwigSummary correlation |
-| 6 | `DEDUP_CONSENSUS` | KAS_ANALYZER | `picard_gencore_dedup.nf` | picard MarkDuplicates + gencore consensus dedup |
-| 7 | `SPLIT_BAM_PSEUDOREPS` | KAS_ANALYZER | `split_bam_pseudoreps.nf` | (conditional) deterministic BAM partition for n=1 conditions |
-| 8 | `BUILD_DIFFBIND_SAMPLESHEET` | KAS_ANALYZER | `differential_peaks.nf` | Fan the cohort into one DiffBind samplesheet per treatment case (stage 1 stops here) |
-| 9 | `DIFFERENTIAL_PEAKS` | DIFFERENTIAL | `differential_peaks.nf` | DiffBind (DESeq2 backend); one control-vs-case contrast per case, output under `06_differential/<case>/` |
-| 10 | `CALL_VARIANTS` | DIFFERENTIAL | `mutect2_call_variants.nf` | Mutect2 tumor-only + germline + PoN, per case, restricted to that case's differential peaks |
-| 11 | `GUIDESCAN_SEED` | DIFFERENTIAL | `guidescan.nf` | Stage 1: exact-seed grep + bounded-DP CFD scoring; most-likely gRNA binding site per differential peak (requires `--guidescan_grna` or `--guidescan_params`) |
-| 12 | `GUIDESCAN_ENUMERATE` | DIFFERENTIAL | `guidescan.nf` | Stage 2: GuideScan2 enumerate + CFD over just the peaks stage 1 could not anchor (disable with `--skip_guidescan_enumerate`) |
+| Process | Stage | Source file | Description |
+|---|---|---|---|
+| `TRIM_ALIGN` | KAS_ANALYZER | `trim_align.nf` | trim_galore + KAS-Analyzer KAS-seq (Bowtie2, KAS-Analyzer's default aligner) |
+| `PEAK_CALL` | KAS_ANALYZER | `analyze.nf` | MACS2 via KAS-Analyzer (`--macs2_mode`), treatment vs background |
+| `KAS_STATISTICS` | KAS_ANALYZER | `analyze.nf` | Cohort RPM statistics -> ratios.txt |
+| `NORMALIZE_BIGWIG` | KAS_ANALYZER | `analyze.nf` | RPM-ratio normalized bedGraph + UCSC bigWig |
+| `QC_METRICS` | KAS_ANALYZER | `analyze.nf` | FRiP + multiBigwigSummary correlation |
+| `DEDUP_CONSENSUS` | KAS_ANALYZER | `picard_gencore_dedup.nf` | picard MarkDuplicates + gencore consensus dedup |
+| `SPLIT_BAM_PSEUDOREPS` | KAS_ANALYZER | `split_bam_pseudoreps.nf` | (conditional) deterministic BAM partition for n=1 conditions |
+| `BUILD_DIFFBIND_SAMPLESHEET` | DIFFERENTIAL | `differential_peaks.nf` | Fan the cohort into one DiffBind samplesheet per treatment case (stage 1 stops here) |
+| `DIFFERENTIAL_PEAKS` | DIFFERENTIAL | `differential_peaks.nf` | DiffBind (DESeq2 backend); one control-vs-case contrast per case, output under `06_differential/<case>/` |
+| `CALL_VARIANTS` | DIFFERENTIAL | `mutect2_call_variants.nf` | Mutect2 tumor-only + germline + PoN, per case, restricted to that case's differential peaks |
+| `GUIDESCAN_SEED` | DIFFERENTIAL | `guidescan.nf` | Exact-seed grep + bounded-DP CFD scoring; most-likely gRNA binding site per differential peak (requires `--guidescan_grna` or `--guidescan_params`) |
+| `GUIDESCAN_ENUMERATE` | DIFFERENTIAL | `guidescan.nf` | GuideScan2 enumerate + CFD over remaining peaks (disable with `--skip_guidescan_enumerate`) |
+| `VARIANT_SUBTRACT` | DIFFERENTIAL | `variant_subtract.nf` | Per case: merge control and treatment replicate VCFs, subtract control positions, AD/DP filter, split CT/AG |
+| `PROTOSPACER` | DIFFERENTIAL | `protospacer.nf` | Cohort-level: variant position within the predicted protospacer, per substitution type (disable with `--skip_protospacer`) |
 
 ## Replicate Handling
 
@@ -264,6 +268,8 @@ Key parameters and their defaults:
 | `--skip_guidescan_enumerate` | false | Skip stage 2 (GuideScan2 enumerate), leaving stage 1's seed-anchored results only |
 | `--guidescan_enumerate_mismatches` | 8 | Stage 2 search budget; separate from `--guidescan_mismatches` and deliberately lower |
 | `--guidescan_enumerate_chunk_size` | 15 | Stage 2: peaks per GuideScan2 index+enumerate unit |
+| `--skip_protospacer` | false | Skip the cohort-level protospacer position analysis (see [Protospacer Position Analysis](#protospacer-position-analysis)) |
+| `--protospacer_palette` | (none) | JSON map of `case_id` -> hex colour, for exact figure colour parity |
 
 ## Tool dependencies
 

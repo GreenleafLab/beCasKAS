@@ -17,10 +17,10 @@ process CALL_VARIANTS {
     path pon_tbi
 
     output:
-    tuple val(sample), path("${sample.id}_no-alt-chr.vcf"), emit: vcf_no_alt
-    tuple val(sample), path("${sample.id}_CT.vcf"),         emit: vcf_ct
-    tuple val(sample), path("${sample.id}_AG.vcf"),         emit: vcf_ag
-    tuple val(sample), path("${sample.id}.vcf"),            emit: vcf_raw
+    tuple val(case_id), val(sample), path("${sample.id}_no-alt-chr.vcf"), emit: vcf_no_alt
+    tuple val(case_id), val(sample), path("${sample.id}_CT.vcf"),         emit: vcf_ct
+    tuple val(case_id), val(sample), path("${sample.id}_AG.vcf"),         emit: vcf_ag
+    tuple val(case_id), val(sample), path("${sample.id}.vcf"),            emit: vcf_raw
 
     script:
     """

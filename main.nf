@@ -9,6 +9,8 @@ include { DEDUP_CONSENSUS }                                                  fro
 include { SPLIT_BAM_PSEUDOREPS }                                             from './nextflow/modules/split_bam_pseudoreps'
 include { BUILD_DIFFBIND_SAMPLESHEET; DIFFERENTIAL_PEAKS }                   from './nextflow/modules/differential_peaks'
 include { CALL_VARIANTS }                                                    from './nextflow/modules/mutect2_call_variants'
+include { VARIANT_SUBTRACT }                                                 from './nextflow/modules/variant_subtract'
+include { PROTOSPACER }                                                      from './nextflow/modules/protospacer'
 include { GUIDESCAN_SEED; GUIDESCAN_ENUMERATE; resolveGuidescanParams }      from './nextflow/modules/guidescan'
 
 // Stage One
@@ -174,7 +176,8 @@ workflow DIFFERENTIAL {
     }
     ch_diff_bed.no_peaks.subscribe { case_id, bed ->
         log.warn "DIFFERENTIAL: case '${case_id}' has no peaks passing the FDR/LFC " +
-                 "filter -- skipping CALL_VARIANTS and both guidescan stages"
+                 "filter -- skipping CALL_VARIANTS, VARIANT_SUBTRACT, both guidescan " +
+                 "stages and PROTOSPACER"
     }
 
     // Per-case variant calling:
@@ -201,6 +204,31 @@ workflow DIFFERENTIAL {
         pon_tbi
     )
 
+    // Background-subtracted per-case variant sets (see variant_subtract.nf).
+    ch_subtract_jobs = CALL_VARIANTS.out.vcf_no_alt
+        .map { case_id, sample, vcf ->
+            tuple(case_id, sample.condition == 'control' ? 'control' : 'treatment', sample.id, vcf)
+        }
+        .groupTuple(by: 0)
+        .map { case_id, groups, sample_ids, vcfs ->
+            // Sort by sample id: groupTuple emits in arrival order and bcftools merge
+            def ci = (0..<groups.size()).findAll { groups[it] == 'control'   }.sort { sample_ids[it] }
+            def ti = (0..<groups.size()).findAll { groups[it] == 'treatment' }.sort { sample_ids[it] }
+            tuple(case_id,
+                  ci.collect { sample_ids[it] }, ci.collect { vcfs[it] },
+                  ti.collect { sample_ids[it] }, ti.collect { vcfs[it] })
+        }
+        .branch { case_id, ctrl_ids, ctrl_vcfs, trt_ids, trt_vcfs ->
+            complete: ctrl_ids && trt_ids
+            partial : true
+        }
+    ch_subtract_jobs.partial.subscribe { case_id, ctrl_ids, ctrl_vcfs, trt_ids, trt_vcfs ->
+        log.warn "VARIANT_SUBTRACT: case '${case_id}' has ${ctrl_ids.size()} control and " +
+                 "${trt_ids.size()} treatment sample(s); subtraction needs at least one of " +
+                 "each -- skipping"
+    }
+    VARIANT_SUBTRACT(ch_subtract_jobs.complete)
+
     // Two-stage gRNA binding-site prediction
     if (params.guidescan_grna || params.guidescan_params) {
         def guidescanOverrides = params.guidescan_params
@@ -212,6 +240,7 @@ workflow DIFFERENTIAL {
             .filter { case_id, bed, gs -> gs != null }
         GUIDESCAN_SEED(ch_guidescan_jobs, fasta, fasta_fai)
 
+        ch_enumerate_sites = Channel.empty()
         if (!params.skip_guidescan_enumerate) {
             ch_no_seed = GUIDESCAN_SEED.out.no_seed_bed.branch { case_id, bed, gs ->
                 with_residue: bed.size() > 0
@@ -221,6 +250,39 @@ workflow DIFFERENTIAL {
                 log.info "GUIDESCAN: case '${case_id}' has no unanchored peaks -- skipping enumerate"
             }
             GUIDESCAN_ENUMERATE(ch_no_seed.with_residue, fasta, fasta_fai)
+            ch_enumerate_sites = GUIDESCAN_ENUMERATE.out.binding_sites
+        }
+
+        // Cohort-level, so it waits on both guidescan stages and VARIANT_SUBTRACT for every case
+        if (!params.skip_protospacer) {
+            ch_tumors_by_case = ch_dedup
+                .filter { sample, bam, bai -> sample.condition != 'control' }
+                .map    { sample, bam, bai -> tuple(sample.condition, sample.id) }
+                .groupTuple()
+                .map    { cond, ids -> tuple(cond, ids.sort(false)) }
+
+            ch_protospacer_in = GUIDESCAN_SEED.out.binding_sites
+                .join(ch_diff_bed.with_peaks)
+                .join(VARIANT_SUBTRACT.out.no_alt)
+                .join(ch_tumors_by_case)
+                .join(ch_guidescan_jobs.map { case_id, bed, gs -> tuple(case_id, gs.grna) })
+                .toList()
+                .map { rows ->
+                    tuple(rows.collect { it[0] }, rows.collect { it[1] }, rows.collect { it[2] },
+                          rows.collect { it[3] }, rows.collect { it[4] }, rows.collect { it[5] })
+                }
+
+            ch_enum_in = ch_enumerate_sites
+                .toList()
+                .map { rows -> tuple(rows.collect { it[0] }, rows.collect { it[1] }) }
+
+            PROTOSPACER(
+                ch_protospacer_in,
+                ch_enum_in,
+                Channel.of(true, false),
+                fasta,
+                fasta_fai
+            )
         }
     }
 }

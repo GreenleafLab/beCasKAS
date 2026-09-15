@@ -175,6 +175,11 @@
                     "minimum": 0,
                     "description": "Stage 2 search budget -- separate from --guidescan_mismatches and deliberately lower, since cost grows as C(20,m)*3^m (~28M at m=6, ~826M at m=8, ~10.9B at m=10). 8 because at m=6 the mismatch distribution was still rising at the ceiling. DO NOT RAISE TO 10: a 150-peak run emitted 17.6M rows / 1.8 GB and did not finish in 2.5 h."
                 },
+                "skip_protospacer": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Skip PROTOSPACER, the final step that maps each background-subtracted variant onto its 1-based position within the predicted 20 nt protospacer and writes the figure set. It runs by default whenever a gRNA is configured, since it is the readout the rest of the differential stage exists to produce. Skip it for a run where only the intermediate tables are wanted, or on a container without r-patchwork."
+                },
                 "guidescan_enumerate_chunk_size": {
                     "type": "integer",
                     "default": 15,
