@@ -10,8 +10,8 @@ process PROTOSPACER {
     tag "${stranded ? 'stranded' : 'aggregated'}"
 
     input:
-    tuple val(case_ids), path(seed_tsvs), path(diff_beds), path(sub_vcfs), val(tumor_lists), val(grnas)
-    tuple val(enum_ids), path(enum_tsvs)
+    tuple val(case_ids), path(seed_tsvs, stageAs: 'seed_??.tsv'), path(diff_beds, stageAs: 'diff_??.bed'), path(sub_vcfs), val(tumor_lists), val(grnas)
+    tuple val(enum_ids), path(enum_tsvs, stageAs: 'enum_??.tsv')
     val  stranded
     path fasta
     path fasta_fai
@@ -22,7 +22,8 @@ process PROTOSPACER {
     script:
     // Largest same-spacer set shares a y-axis; cross-locus cases get their own.
     def by_grna = [case_ids, grnas].transpose().groupBy { id, g -> g }
-    def shared  = (by_grna.values().max { it.size() } ?: []).collect { id, g -> id }
+    def shared  = (by_grna.sort { a, b -> b.value.size() <=> a.value.size() ?: a.key <=> b.key }
+                          .values().find { true } ?: []).collect { id, g -> id }
 
     def ordered = case_ids.sort(false)
     def ramp    = ['#D97827', '#1565C0', '#BF2025', '#F4B97D', '#0B6623', '#6A4C93', '#FCAE1E', '#00838F']

@@ -119,8 +119,8 @@ workflow KAS_ANALYZER {
         .set { ch_peaks_by_id }
 
     BUILD_DIFFBIND_SAMPLESHEET(
-        ch_diff_rows.toList(),
-        ch_peaks_by_id.toList()
+        ch_diff_rows.toSortedList   { a, b -> a[0] <=> b[0] },
+        ch_peaks_by_id.toSortedList { a, b -> a[0] <=> b[0] }
     )
 
     // One (case_id, csv) per treatment case
