@@ -5,7 +5,6 @@ Reproducible Nextflow pipeline implementing the beCasKAS computational analysis 
 Detects non-coding off-target base editor unwinding and editing in primary cells.
 
 ## Quick start
-
 ### Requirements
 - [Nextflow](https://www.nextflow.io/) >= 25.10.0
 - [Apptainer](https://apptainer.org/docs/admin/main/installation.html) >= 1.2.0
