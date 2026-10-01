@@ -279,7 +279,6 @@ workflow DIFFERENTIAL {
             PROTOSPACER(
                 ch_protospacer_in,
                 ch_enum_in,
-                Channel.of(true, false),
                 fasta,
                 fasta_fai
             )

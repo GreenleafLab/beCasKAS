@@ -1,18 +1,11 @@
 // Variant position within the gRNA protospacer, per differential peak. See the
 // README section "Protospacer Position Analysis".
-//
-// COHORT-LEVEL, unlike every other process in this stage: same-locus groups share a
-// y-axis and the funnel figure is one combined plot, so it needs every case at once
-// rather than one task per case. Runs once per STRANDED mode.
 
 process PROTOSPACER {
-
-    tag "${stranded ? 'stranded' : 'aggregated'}"
 
     input:
     tuple val(case_ids), path(seed_tsvs, stageAs: 'seed_??.tsv'), path(diff_beds, stageAs: 'diff_??.bed'), path(sub_vcfs), val(tumor_lists), val(grnas)
     tuple val(enum_ids), path(enum_tsvs, stageAs: 'enum_??.tsv')
-    val  stranded
     path fasta
     path fasta_fai
 
@@ -80,7 +73,6 @@ process PROTOSPACER {
 
     ${projectDir}/nextflow/bin/protospacer.R \\
         --config protospacer_config.json \\
-        --stranded ${stranded ? 'TRUE' : 'FALSE'} \\
         --seed-dir sites \\
         --vcf-dir vcf \\
         --diff-dir diff \\
@@ -88,7 +80,7 @@ process PROTOSPACER {
         --genome ${fasta} \\
         --samtools \$(command -v samtools)
 
-    # bgzip + tabix every VCF the stranded pass wrote
+    # bgzip + tabix every VCF protospacer.R wrote
     for v in out/vcf/*.vcf; do
         [ -e "\$v" ] || break
         bgzip -c "\$v" > "\$v.gz"
