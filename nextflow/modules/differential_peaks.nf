@@ -39,6 +39,7 @@ process DIFFERENTIAL_PEAKS {
     tuple val(case_id), path("differential_peaks_full.tsv"), emit: full
     tuple val(case_id), path("differential_peaks_method.txt"), emit: method
     tuple val(case_id), path("volcano.pdf"),                 emit: volcano
+    tuple val(case_id), path("ma_plot.pdf"),                 emit: ma_plot
     tuple val(case_id), path("dba_object.rds"),              emit: dba_object
 
     script:

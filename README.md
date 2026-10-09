@@ -210,7 +210,7 @@ results/
     pseudoreps/                            # (only if n=1) pseudo-rep BAMs
   06_differential/
     samplesheets/                          # diffbind_samplesheet_<case>.csv (editable; --diffbind_samplesheet_dir)
-    <case>/                                # differential_peaks.bed, nondiff_peaks.bed, full TSV, volcano, dba_object.rds, method.txt
+    <case>/                                # differential_peaks.bed, nondiff_peaks.bed, full TSV, volcano, MA plot, dba_object.rds, method.txt
   07_variants/<case>/${sample_id}/         # *.vcf, *_no-alt-chr.vcf, *_CT.vcf, *_AG.vcf
   08_guidescan/<case>/                     # binding_sites_seed.tsv, binding_sites_enumerate.tsv
   09_variants_subtracted/<case>/           # <case>_vs_control_relcontrol*.vcf
