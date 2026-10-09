@@ -1,6 +1,9 @@
-// Most-likely gRNA binding site per differential peak (Doench 2016 CFD), in two stages.
+// Most-likely gRNA binding site per peak (Doench 2016 CFD), in two stages.
 // Stage 1 anchors on an exact seed match and scores that one placement
 // Stage 2 runs GuideScan2 enumerate over remaining peaks with no exact seed anchor
+//
+// Both the differential arm and the non-differential arm (see main.nf) run these processes; the
+// arms differ only in the peak BED they are given and in whether stage 2 runs at all.
 
 // Per-case gRNA/seed settings: cases in one run can target different loci, so each
 // field comes from --guidescan_params[case_id] if set, else the global --guidescan_*.
@@ -36,21 +39,22 @@ process GUIDESCAN_SEED {
     tag "${case_id}"
 
     input:
-    tuple val(case_id), path(differential_peaks_bed), val(gs)
+    tuple val(case_id), path(peaks_bed), val(gs)
     path fasta
     path fasta_fai
 
     output:
     tuple val(case_id), path("binding_sites_seed.tsv"),          emit: binding_sites
     tuple val(case_id), path("binding_sites_seed_raw_hits.tsv"), emit: raw_hits
-    tuple val(case_id), path("no_seed_peaks.bed"), val(gs),       emit: no_seed_bed
+    tuple val(case_id), path("no_seed_peaks.bed"), val(gs),      emit: no_seed_bed
+    tuple val(case_id), path("scored_peaks.bed"),                emit: scored_peaks
 
     script:
     """
     set -euo pipefail
 
     ${projectDir}/nextflow/bin/guidescan_seed.py \\
-        --bed ${differential_peaks_bed} \\
+        --bed ${peaks_bed} \\
         --genome ${fasta} \\
         --grna ${gs.grna} --pam ${gs.pam} --seed ${gs.seed} \\
         --mismatches ${gs.mismatches} \\
@@ -65,6 +69,10 @@ process GUIDESCAN_SEED {
     # seed_hits is col 11; the peak's own coordinates are cols 12-14.
     awk -F'\\t' 'NR > 1 && \$11 == 0 { print \$12 "\\t" \$13 "\\t" \$14 }' \\
         binding_sites_seed.tsv | sort -k1,1 -k2,2n -u > no_seed_peaks.bed
+
+    # Build interval list for non-differential arm (drop unscored sites)
+    awk -F'\\t' 'NR > 1 && \$2 != "." { print \$12 "\\t" \$13 "\\t" \$14 }' \\
+        binding_sites_seed.tsv | sort -k1,1 -k2,2n -u > scored_peaks.bed
     """
 }
 

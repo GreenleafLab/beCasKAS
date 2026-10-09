@@ -157,6 +157,18 @@ if (sys.nframe() == 0L && !interactive()) {
                 file = file.path(args$`output-dir`, "differential_peaks.bed"),
                 sep = "\t", row.names = FALSE, col.names = FALSE, quote = FALSE)
 
+    # Output non-differential arm's peak set
+    macs2 <- reduce(suppressWarnings(do.call(c, lapply(   # replicates differ in seqlevels
+        unique(dba_ss$Peaks[dba_ss$Condition == "treatment"]),
+        function(p) { x <- read.delim(p); GRanges(x$chr, IRanges(x$start, x$end)) }))))
+    nondiff <- macs2[!overlapsAny(macs2, GRanges(sig$seqnames, IRanges(sig$start, sig$end)))]
+    write.table(data.frame(chrom = as.character(seqnames(nondiff)),
+                           start = start(nondiff) - 1L,
+                           end   = end(nondiff)),
+                file = file.path(args$`output-dir`, "nondiff_peaks.bed"),
+                sep = "\t", row.names = FALSE, col.names = FALSE, quote = FALSE)
+    cat("differential_peaks: wrote", length(nondiff), "non-differential peaks\n")
+
     # Full results TSV
     write.table(report,
                 file = file.path(args$`output-dir`, "differential_peaks_full.tsv"),

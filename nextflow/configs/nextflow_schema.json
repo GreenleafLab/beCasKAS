@@ -47,18 +47,6 @@
                 }
             }
         },
-        "peak_call_options": {
-            "title": "peak_call step",
-            "type": "object",
-            "properties": {
-                "macs2_mode": {
-                    "type": "string",
-                    "enum": ["sharp", "broad"],
-                    "default": "sharp",
-                    "description": "MACS2 mode (KAS-Analyzer peakscalling -b flag)"
-                }
-            }
-        },
         "staging_options": {
             "title": "Pipeline staging",
             "type": "object",
@@ -185,6 +173,11 @@
                     "default": 15,
                     "minimum": 1,
                     "description": "Stage 2: peaks per GuideScan2 index+enumerate unit. Small on purpose -- each chunk's enum.csv is parsed single-threaded, so smaller chunks parallelise the scoring too."
+                },
+                "nondiff_arm": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Run the non-differential arm: a second, separate pass of guidescan seed + variant calling + protospacer over this case's MACS2 treatment peaks that overlap no differential peak. These are R-loops the +/-gRNA contrast could not call differential often due to high endogenous ssDNA at a transcribed locus. Off by default."
                 }
             }
         },
@@ -245,7 +238,6 @@
         {"$ref": "#/definitions/input_output_options"},
         {"$ref": "#/definitions/reference_options"},
         {"$ref": "#/definitions/trim_align_options"},
-        {"$ref": "#/definitions/peak_call_options"},
         {"$ref": "#/definitions/staging_options"},
         {"$ref": "#/definitions/differential_peaks_options"},
         {"$ref": "#/definitions/reproducibility_options"},

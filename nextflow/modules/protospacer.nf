@@ -8,6 +8,7 @@ process PROTOSPACER {
     tuple val(enum_ids), path(enum_tsvs, stageAs: 'enum_??.tsv')
     path fasta
     path fasta_fai
+    val  allow_no_on_target   // non-differential arm: its peak set excludes the on-target site
 
     output:
     path "out/**", emit: results
@@ -78,6 +79,7 @@ process PROTOSPACER {
         --diff-dir diff \\
         --out-dir out \\
         --genome ${fasta} \\
+        ${allow_no_on_target ? '--allow-no-on-target' : ''} \\
         --samtools \$(command -v samtools)
 
     # bgzip + tabix every VCF protospacer.R wrote

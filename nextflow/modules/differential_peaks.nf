@@ -35,6 +35,7 @@ process DIFFERENTIAL_PEAKS {
 
     output:
     tuple val(case_id), path("differential_peaks.bed"),      emit: bed
+    tuple val(case_id), path("nondiff_peaks.bed"),           emit: nondiff_peaks
     tuple val(case_id), path("differential_peaks_full.tsv"), emit: full
     tuple val(case_id), path("differential_peaks_method.txt"), emit: method
     tuple val(case_id), path("volcano.pdf"),                 emit: volcano

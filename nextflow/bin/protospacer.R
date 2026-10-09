@@ -26,7 +26,9 @@ suppressPackageStartupMessages(library(optparse))
   make_option("--diff-dir", type = "character", default = "."),
   make_option("--out-dir",  type = "character", default = "."),
   make_option("--genome",   type = "character", help = "Indexed reference FASTA"),
-  make_option("--samtools", type = "character", default = "samtools")
+  make_option("--samtools", type = "character", default = "samtools"),
+  make_option("--allow-no-on-target", action = "store_true", default = FALSE,
+              help = "Allow no on-target sites. Knob for non-differential arm")
 )))
 
 .cfg <- jsonlite::fromJSON(.opt$config, simplifyVector = FALSE)
@@ -37,6 +39,7 @@ diff_dir  <- .opt$`diff-dir`
 # spacer sequences are read from the reference (see site_spacer_sequences())
 genome_fa <- .opt$genome
 SAMTOOLS  <- .opt$samtools
+ALLOW_NO_ON_TARGET <- isTRUE(.opt$`allow-no-on-target`)
 
 out_dir <- .opt$`out-dir`
 dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
@@ -253,7 +256,7 @@ position_in_protospacer <- function(vcf_path, tsv_path, samples, cond = NULL) {
   sites <- read_sites(tsv_path, cond)
 
   n_on_target <- sum(sites$on_target)
-  if (n_on_target != 1) {
+  if (n_on_target > 1 || (n_on_target == 0 && !ALLOW_NO_ON_TARGET)) {
     stop(sprintf("%s: expected exactly 1 on-target (0 mismatch, 0 bulge) site, found %d",
                   tsv_path, n_on_target))
   }
@@ -844,7 +847,8 @@ for (cond in conditions) {
   sites$on_target <- !is.na(sites$mismatches) & sites$mismatches == 0L &
     sites$rna_bulges == 0L & sites$dna_bulges == 0L
   sites$site_id <- seq_len(nrow(sites))
-  if (sum(sites$on_target) != 1) {
+  if (sum(sites$on_target) > 1 ||
+      (sum(sites$on_target) == 0 && !ALLOW_NO_ON_TARGET)) {
     stop(sprintf("%s: expected exactly 1 on-target site, found %d",
                  cond, sum(sites$on_target)))
   }
