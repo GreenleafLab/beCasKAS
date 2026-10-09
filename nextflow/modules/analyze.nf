@@ -28,7 +28,7 @@ process PEAK_CALL {
     KAS-Analyzer peakscalling \\
         -t ${sample_bed} \\
         -c ${control_bed} \\
-        -b ${params.macs2_mode} \\
+        -b sharp \\
         -o ${sample.id}_input \\
         -g ${genome_name}
 
