@@ -72,7 +72,7 @@ af-only-gnomad.hg38.vcf.gz
 af-only-gnomad.hg38.vcf.gz.tbi
 ```
 
-All reference files live flat in `${refdir}/`. The pipeline expects exactly these filenames.
+All reference files live flat in `${refdir}/`. The pipeline expects exactly these filenames. `--genome` sets the prefix: `--genome hg38_no_alt` reads `hg38_no_alt.*` instead of `hg38.*`.
 
 Suggesting staging steps directly use the generated `becaskas.sif` container as dependencies for `samtools` and `bowtie2-build` commands are already bundled inside. Run the following from inside `${refdir}`.
 
@@ -266,6 +266,7 @@ Key parameters and their defaults:
 | Param | Default | Role |
 |---|---|---|
 | `--stage` | all | Stage to run: `all` / `kas_analyzer` / `diffbind` |
+| `--genome` | hg38 | Reference file prefix in `--refdir`, e.g. `hg38_no_alt` (see [Required References](#required-references)) |
 | `--clip_r2` | 12 | Bases clipped from 5' of R2 (adaptase library prep) |
 | `--fdr` | 0.05 | DiffBind FDR cutoff (cohort default) |
 | `--lfc` | 1 | DiffBind log2 fold-change cutoff (cohort default) |
