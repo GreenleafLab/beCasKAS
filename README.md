@@ -289,6 +289,7 @@ Key parameters and their defaults:
 | `--guidescan_enumerate_chunk_size` | 15 | Stage 2: peaks per GuideScan2 index+enumerate unit |
 | `--skip_protospacer` | false | Skip the cohort-level protospacer position analysis (see [Protospacer Position Analysis](#protospacer-position-analysis)) |
 | `--protospacer_palette` | (none) | JSON map of `case_id` -> hex colour, for exact figure colour parity |
+| `--protospacer_both_strands` | false | `variant_altcount_in_protospacer` plots: also show TS edits below the axis (default: NTS only; the CSV always has both strands) |
 | `--nondiff_arm` | false | Second pass over MACS2 peaks that were not called differential (see [The Non-Differential Arm](#the-non-differential-arm)) |
 
 ## Tool dependencies

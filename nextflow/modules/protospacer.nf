@@ -14,11 +14,6 @@ process PROTOSPACER {
     path "out/**", emit: results
 
     script:
-    // Largest same-spacer set shares a y-axis; cross-locus cases get their own.
-    def by_grna = [case_ids, grnas].transpose().groupBy { id, g -> g }
-    def shared  = (by_grna.sort { a, b -> b.value.size() <=> a.value.size() ?: a.key <=> b.key }
-                          .values().find { true } ?: []).collect { id, g -> id }
-
     def ordered = case_ids.sort(false)
     def ramp    = ['#D97827', '#1565C0', '#BF2025', '#F4B97D', '#0B6623', '#6A4C93', '#FCAE1E', '#00838F']
     def palette = params.protospacer_palette
@@ -33,7 +28,6 @@ process PROTOSPACER {
         enumerate_files : ordered.collectEntries { [it, "${it}_binding_sites_enumerate.tsv"] },
         peakbed_files   : ordered.collectEntries { [it, "${it}_differential_peaks.bed"] },
         palette         : palette,
-        shared_groups   : shared,
         panel_ncol      : n <= 3 ? n  : 2,
         panel_w         : n <= 3 ? 16 : 15,
         panel_h         : n <= 3 ? 5.2 : 9
@@ -80,6 +74,7 @@ process PROTOSPACER {
         --out-dir out \\
         --genome ${fasta} \\
         ${allow_no_on_target ? '--allow-no-on-target' : ''} \\
+        ${params.protospacer_both_strands ? '--both-strands' : ''} \\
         --samtools \$(command -v samtools)
 
     # bgzip + tabix every VCF protospacer.R wrote
