@@ -133,12 +133,11 @@ if (sys.nframe() == 0L && !interactive()) {
     # Pull report
     report <- as.data.frame(dba.report(samples, contrast = 1, th = 1))
 
-    # Color column for volcano
+    # Color column for volcano/MA
     report$color <- "NS"
     report$color[report$FDR < fdr_cut & report$Fold >  1] <- "Up"
     report$color[report$FDR < fdr_cut & report$Fold < 1]  <- "Down"
 
-    # Volcano plot
     # Volcano plot
     v <- ggplot(report, aes(x = Fold, y = -log10(FDR), color = color)) +
          geom_point(alpha = 0.2) +
@@ -148,6 +147,16 @@ if (sys.nframe() == 0L && !interactive()) {
          theme(legend.position = "bottom")
     ggsave(file.path(args$`output-dir`, "volcano.pdf"), v, width = 7.5, height = 10)
 
+    # MA plot
+    m <- ggplot(report, aes(x = Conc, y = Fold, color = color)) +
+         geom_point(alpha = 0.2) +
+         geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+         scale_color_manual(values = c("Up" = "#FCAE1E", "Down" = "grey70", "NS" = "grey70")) +
+         theme_minimal() + ylim(-8, 8) +
+         labs(x = "log2 Mean Concentration", y = "log2 Fold Change") +
+         theme(legend.position = "bottom")
+    ggsave(file.path(args$`output-dir`, "ma_plot.pdf"), m, width = 7.5, height = 5)
+
     # Filtered differential_peaks.bed
     sig <- filter_significant_peaks(report,
                                     fdr_cutoff = fdr_cut,
@@ -156,6 +165,18 @@ if (sys.nframe() == 0L && !interactive()) {
     write.table(bed,
                 file = file.path(args$`output-dir`, "differential_peaks.bed"),
                 sep = "\t", row.names = FALSE, col.names = FALSE, quote = FALSE)
+
+    # Output non-differential arm's peak set
+    macs2 <- reduce(suppressWarnings(do.call(c, lapply(   # replicates differ in seqlevels
+        unique(dba_ss$Peaks[dba_ss$Condition == "treatment"]),
+        function(p) { x <- read.delim(p); GRanges(x$chr, IRanges(x$start, x$end)) }))))
+    nondiff <- macs2[!overlapsAny(macs2, GRanges(sig$seqnames, IRanges(sig$start, sig$end)))]
+    write.table(data.frame(chrom = as.character(seqnames(nondiff)),
+                           start = start(nondiff) - 1L,
+                           end   = end(nondiff)),
+                file = file.path(args$`output-dir`, "nondiff_peaks.bed"),
+                sep = "\t", row.names = FALSE, col.names = FALSE, quote = FALSE)
+    cat("differential_peaks: wrote", length(nondiff), "non-differential peaks\n")
 
     # Full results TSV
     write.table(report,

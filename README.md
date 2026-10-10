@@ -186,6 +186,18 @@ nextflow run main.nf --stage diffbind -resume \
     --samplesheet samples.csv --refdir /path/to/refs --outdir results/
 ```
 
+## The Non-Differential Arm
+
+`--nondiff_arm` reruns guidescan seed, variant calling and protospacer over
+`nondiff_peaks.bed`, MACS2 treatment peaks that do not overlap a differential peak. Accounts
+for highly transcribed loci with large endogenous ssDNA signal (un-caught gRNA-directed edits).
+
+```bash
+nextflow run main.nf --stage diffbind -resume --nondiff_arm \
+    --guidescan_params guidescan_params.json \
+    --samplesheet samples.csv --refdir /path/to/refs --outdir results/
+```
+
 ## Output
 
 ```
@@ -198,11 +210,16 @@ results/
     pseudoreps/                            # (only if n=1) pseudo-rep BAMs
   06_differential/
     samplesheets/                          # diffbind_samplesheet_<case>.csv (editable; --diffbind_samplesheet_dir)
-    <case>/                                # differential_peaks.bed, full TSV, volcano, dba_object.rds, method.txt
+    <case>/                                # differential_peaks.bed, nondiff_peaks.bed, full TSV, volcano, MA plot, dba_object.rds, method.txt
   07_variants/<case>/${sample_id}/         # *.vcf, *_no-alt-chr.vcf, *_CT.vcf, *_AG.vcf
   08_guidescan/<case>/                     # binding_sites_seed.tsv, binding_sites_enumerate.tsv
   09_variants_subtracted/<case>/           # <case>_vs_control_relcontrol*.vcf
   10_protospacer/                          # cohort figures + CSVs
+  11_nondiff/                              # --nondiff_arm only
+    <case>/guidescan/                      # binding_sites_seed.tsv, scored_peaks.bed
+    <case>/variants/${sample_id}/          # *.vcf
+    <case>/variants_subtracted/            # <case>_vs_control_relcontrol*.vcf
+    protospacer/                           # cohort figures + CSVs, non-differential arm
   pipeline_info/                           # execution_report, timeline, trace, DAG SVG
 ```
 
@@ -215,7 +232,7 @@ The pipeline is split into two sub-workflows (selectable with `--stage`, see [St
 | Process | Stage | Source file | Description |
 |---|---|---|---|
 | `TRIM_ALIGN` | KAS_ANALYZER | `trim_align.nf` | trim_galore + KAS-Analyzer KAS-seq (Bowtie2, KAS-Analyzer's default aligner) |
-| `PEAK_CALL` | KAS_ANALYZER | `analyze.nf` | MACS2 via KAS-Analyzer (`--macs2_mode`), treatment vs background |
+| `PEAK_CALL` | KAS_ANALYZER | `analyze.nf` | MACS2 via KAS-Analyzer, treatment vs background |
 | `KAS_STATISTICS` | KAS_ANALYZER | `analyze.nf` | Cohort RPM statistics -> ratios.txt |
 | `NORMALIZE_BIGWIG` | KAS_ANALYZER | `analyze.nf` | RPM-ratio normalized bedGraph + UCSC bigWig |
 | `QC_METRICS` | KAS_ANALYZER | `analyze.nf` | FRiP + multiBigwigSummary correlation |
@@ -228,6 +245,10 @@ The pipeline is split into two sub-workflows (selectable with `--stage`, see [St
 | `GUIDESCAN_ENUMERATE` | DIFFERENTIAL | `guidescan.nf` | GuideScan2 enumerate + CFD over remaining peaks (disable with `--skip_guidescan_enumerate`) |
 | `VARIANT_SUBTRACT` | DIFFERENTIAL | `variant_subtract.nf` | Per case: merge control and treatment replicate VCFs, subtract control positions, AD/DP filter, split CT/AG |
 | `PROTOSPACER` | DIFFERENTIAL | `protospacer.nf` | Cohort-level: variant position within the predicted protospacer, per substitution type (disable with `--skip_protospacer`) |
+| `GUIDESCAN_SEED_NONDIFF` | DIFFERENTIAL | `guidescan.nf` | non-differential arm: seed grep over `nondiff_peaks.bed` (`--nondiff_arm`) |
+| `CALL_VARIANTS_NONDIFF` | DIFFERENTIAL | `mutect2_call_variants.nf` | non-differential arm: Mutect2 over the arm's scored peaks |
+| `VARIANT_SUBTRACT_NONDIFF` | DIFFERENTIAL | `variant_subtract.nf` | non-differential arm: treatment minus control |
+| `PROTOSPACER_NONDIFF` | DIFFERENTIAL | `protospacer.nf` | non-differential arm: separate figure set, no on-target |
 
 ## Replicate Handling
 
@@ -246,7 +267,6 @@ Key parameters and their defaults:
 |---|---|---|
 | `--stage` | all | Stage to run: `all` / `kas_analyzer` / `diffbind` |
 | `--clip_r2` | 12 | Bases clipped from 5' of R2 (adaptase library prep) |
-| `--macs2_mode` | sharp | MACS2 peak-calling mode |
 | `--fdr` | 0.05 | DiffBind FDR cutoff (cohort default) |
 | `--lfc` | 1 | DiffBind log2 fold-change cutoff (cohort default) |
 | `--min_overlap` | 2 | DiffBind consensus minOverlap (cohort default) |
@@ -269,6 +289,7 @@ Key parameters and their defaults:
 | `--guidescan_enumerate_chunk_size` | 15 | Stage 2: peaks per GuideScan2 index+enumerate unit |
 | `--skip_protospacer` | false | Skip the cohort-level protospacer position analysis (see [Protospacer Position Analysis](#protospacer-position-analysis)) |
 | `--protospacer_palette` | (none) | JSON map of `case_id` -> hex colour, for exact figure colour parity |
+| `--nondiff_arm` | false | Second pass over MACS2 peaks that were not called differential (see [The Non-Differential Arm](#the-non-differential-arm)) |
 
 ## Tool dependencies
 

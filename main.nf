@@ -13,6 +13,12 @@ include { VARIANT_SUBTRACT }                                                 fro
 include { PROTOSPACER }                                                      from './nextflow/modules/protospacer'
 include { GUIDESCAN_SEED; GUIDESCAN_ENUMERATE; resolveGuidescanParams }      from './nextflow/modules/guidescan'
 
+// Non-differential arm (--nondiff_arm) renamed processes.
+include { GUIDESCAN_SEED   as GUIDESCAN_SEED_NONDIFF   }                       from './nextflow/modules/guidescan'
+include { CALL_VARIANTS    as CALL_VARIANTS_NONDIFF    }                       from './nextflow/modules/mutect2_call_variants'
+include { VARIANT_SUBTRACT as VARIANT_SUBTRACT_NONDIFF }                       from './nextflow/modules/variant_subtract'
+include { PROTOSPACER      as PROTOSPACER_NONDIFF      }                       from './nextflow/modules/protospacer'
+
 // Stage One
 workflow KAS_ANALYZER {
 
@@ -229,6 +235,13 @@ workflow DIFFERENTIAL {
     }
     VARIANT_SUBTRACT(ch_subtract_jobs.complete)
 
+    // Treatment sample ids per case
+    ch_tumors_by_case = ch_dedup
+        .filter { sample, bam, bai -> sample.condition != 'control' }
+        .map    { sample, bam, bai -> tuple(sample.condition, sample.id) }
+        .groupTuple()
+        .map    { cond, ids -> tuple(cond, ids.sort(false)) }
+
     // Two-stage gRNA binding-site prediction
     if (params.guidescan_grna || params.guidescan_params) {
         def guidescanOverrides = params.guidescan_params
@@ -255,12 +268,6 @@ workflow DIFFERENTIAL {
 
         // Cohort-level, so it waits on both guidescan stages and VARIANT_SUBTRACT for every case
         if (!params.skip_protospacer) {
-            ch_tumors_by_case = ch_dedup
-                .filter { sample, bam, bai -> sample.condition != 'control' }
-                .map    { sample, bam, bai -> tuple(sample.condition, sample.id) }
-                .groupTuple()
-                .map    { cond, ids -> tuple(cond, ids.sort(false)) }
-
             ch_protospacer_in = GUIDESCAN_SEED.out.binding_sites
                 .join(ch_diff_bed.with_peaks)
                 .join(VARIANT_SUBTRACT.out.no_alt)
@@ -280,8 +287,64 @@ workflow DIFFERENTIAL {
                 ch_protospacer_in,
                 ch_enum_in,
                 fasta,
-                fasta_fai
+                fasta_fai,
+                false
             )
+        }
+
+        // For highly transcribed loci (high endogenous ssDNA) that cannot clear DiffBind thresholds.
+        if (params.nondiff_arm) {
+            ch_nondiff_jobs = DIFFERENTIAL_PEAKS.out.nondiff_peaks
+                .filter { case_id, bed -> bed.size() > 0 }
+                .map    { case_id, bed -> tuple(case_id, bed, resolveGuidescanParams(guidescanOverrides, case_id)) }
+                .filter { case_id, bed, gs -> gs != null }
+            GUIDESCAN_SEED_NONDIFF(ch_nondiff_jobs, fasta, fasta_fai)
+
+            // Variant calling is restricted to peaks that got a scored site (seed)
+            ch_nondiff_variant_jobs = ch_ctrl_by_case.mix(ch_trt_by_case)
+                .combine(GUIDESCAN_SEED_NONDIFF.out.scored_peaks.filter { id, bed -> bed.size() > 0 }, by: 0)
+                .map { case_id, sample, bam, bai, bed -> tuple(case_id, sample, bam, bai, bed) }
+            CALL_VARIANTS_NONDIFF(
+                ch_nondiff_variant_jobs,
+                fasta, fasta_fai, fasta_dict, gnomad, gnomad_tbi, pon, pon_tbi
+            )
+
+            ch_nondiff_subtract = CALL_VARIANTS_NONDIFF.out.vcf_no_alt
+                .map { case_id, sample, vcf ->
+                    tuple(case_id, sample.condition == 'control' ? 'control' : 'treatment', sample.id, vcf)
+                }
+                .groupTuple(by: 0)
+                .map { case_id, groups, sample_ids, vcfs ->
+                    def ci = (0..<groups.size()).findAll { groups[it] == 'control'   }.sort { sample_ids[it] }
+                    def ti = (0..<groups.size()).findAll { groups[it] == 'treatment' }.sort { sample_ids[it] }
+                    tuple(case_id,
+                          ci.collect { sample_ids[it] }, ci.collect { vcfs[it] },
+                          ti.collect { sample_ids[it] }, ti.collect { vcfs[it] })
+                }
+                .filter { case_id, ctrl_ids, ctrl_vcfs, trt_ids, trt_vcfs -> ctrl_ids && trt_ids }
+            VARIANT_SUBTRACT_NONDIFF(ch_nondiff_subtract)
+
+            if (!params.skip_protospacer) {
+                ch_nondiff_protospacer_in = GUIDESCAN_SEED_NONDIFF.out.binding_sites
+                    .join(DIFFERENTIAL_PEAKS.out.nondiff_peaks)
+                    .join(VARIANT_SUBTRACT_NONDIFF.out.no_alt)
+                    .join(ch_tumors_by_case)
+                    .join(ch_nondiff_jobs.map { case_id, bed, gs -> tuple(case_id, gs.grna) })
+                    .toList()
+                    .filter { rows -> rows.size() > 0 }
+                    .map { rows ->
+                        tuple(rows.collect { it[0] }, rows.collect { it[1] }, rows.collect { it[2] },
+                              rows.collect { it[3] }, rows.collect { it[4] }, rows.collect { it[5] })
+                    }
+                // No enumerate in this arm, so the stage-2 channel is empty.
+                PROTOSPACER_NONDIFF(
+                    ch_nondiff_protospacer_in,
+                    Channel.value(tuple([], [])),
+                    fasta,
+                    fasta_fai,
+                    true
+                )
+            }
         }
     }
 }
