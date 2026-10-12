@@ -20,7 +20,7 @@ suppressPackageStartupMessages(library(optparse))
 
 .opt <- parse_args(OptionParser(option_list = list(
   make_option("--config",   type = "character",
-              help = "JSON: groups, tumor_samples, seed_files, enumerate_files, peakbed_files, palette, shared_groups, panel_ncol, panel_w, panel_h"),
+              help = "JSON: groups, tumor_samples, seed_files, enumerate_files, peakbed_files, palette, panel_ncol, panel_w, panel_h"),
   make_option("--seed-dir", type = "character", default = "."),
   make_option("--vcf-dir",  type = "character", default = "."),
   make_option("--diff-dir", type = "character", default = "."),
@@ -28,7 +28,9 @@ suppressPackageStartupMessages(library(optparse))
   make_option("--genome",   type = "character", help = "Indexed reference FASTA"),
   make_option("--samtools", type = "character", default = "samtools"),
   make_option("--allow-no-on-target", action = "store_true", default = FALSE,
-              help = "Allow no on-target sites. Knob for non-differential arm")
+              help = "Allow no on-target sites. Knob for non-differential arm"),
+  make_option("--both-strands", action = "store_true", default = FALSE,
+              help = "ALT-count plots: also show TS edits below the axis (default: NTS only)")
 )))
 
 .cfg <- jsonlite::fromJSON(.opt$config, simplifyVector = FALSE)
@@ -40,6 +42,7 @@ diff_dir  <- .opt$`diff-dir`
 genome_fa <- .opt$genome
 SAMTOOLS  <- .opt$samtools
 ALLOW_NO_ON_TARGET <- isTRUE(.opt$`allow-no-on-target`)
+SHOW_TS <- isTRUE(.opt$`both-strands`)
 
 out_dir <- .opt$`out-dir`
 dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
@@ -56,8 +59,6 @@ seed_files      <- unlist(.cfg$seed_files)        # stage 1 binding-site TSV per
 enumerate_files <- unlist(.cfg$enumerate_files)   # stage 2 TSV per group
 peakbed_files   <- unlist(.cfg$peakbed_files)     # differential peaks BED per group
 condition_palette <- unlist(.cfg$palette)
-# groups sharing one y-axis; only same-gRNA groups are comparable
-shared_groups <- unlist(.cfg$shared_groups)
 panel_ncol <- .cfg$panel_ncol; panel_w <- .cfg$panel_w; panel_h <- .cfg$panel_h
 
 stopifnot(length(conditions) > 0,
@@ -73,15 +74,9 @@ snp_type_palette <- setNames(
   snp_types
 )
 
-# Symmetric y half-range: largest stack in either direction, shared across
-# shared_groups (same locus) and per-panel otherwise.
-panel_ylim <- function(totals_df, cond, shared_conditions = shared_groups) {
-  pick <- if (cond %in% shared_conditions) {
-    totals_df$condition %in% shared_conditions
-  } else {
-    totals_df$condition == cond
-  }
-  lim <- max(abs(totals_df$total[pick]), na.rm = TRUE)
+# y half-range: largest stack in either direction, per panel.
+panel_ylim <- function(totals_df, cond) {
+  lim <- max(abs(totals_df$total[totals_df$condition == cond]), na.rm = TRUE)
   if (!is.finite(lim) || lim == 0) 1 else lim
 }
 
@@ -345,7 +340,7 @@ on_target_label <- setNames(vapply(conditions, function(cond) {
   ot <- ot[!is.na(ot$mean_af), ]
   if (nrow(ot) == 0) return(sprintf("%s (on-target: not found)", cond))
   best <- ot[which.max(ot$mean_af), ]
-  sprintf("%s (on-target AF %.2f\u00b1%.2f)", cond, best$mean_af, best$sem_af)
+  sprintf("%s (on-target max AF %.2f\u00b1%.2f)", cond, best$mean_af, best$sem_af)
 }, character(1)), conditions)
 
 # Stack height per position, summed separately for up and down so they don't cancel.
@@ -356,13 +351,16 @@ signed_totals <- function(df, value_col) {
     summarise(total = sum(.data[[value_col]]), .groups = "drop")
 }
 
-# Legend label per class with its NTS (up) / TS (down) totals.
-signed_type_labels <- function(df, value_col, fmt = "%s") {
+# Legend label per class with its NTS (up) / TS (down) totals; NTS only unless show_ts.
+signed_type_labels <- function(df, value_col, fmt = "%s", show_ts = TRUE) {
   v <- df[[value_col]]
   agg <- df %>%
     mutate(.v = v) %>%
     group_by(snp_type) %>%
     summarise(up = sum(.v[.v > 0]), down = -sum(.v[.v < 0]), .groups = "drop")
+  if (!show_ts) {
+    return(setNames(sprintf(paste0("%s (NTS ", fmt, ")"), agg$snp_type, agg$up), agg$snp_type))
+  }
   setNames(sprintf(paste0("%s (NTS ", fmt, " / TS ", fmt, ")"),
                     agg$snp_type, agg$up, agg$down), agg$snp_type)
 }
@@ -392,7 +390,8 @@ all_altcount <- do.call(rbind, lapply(conditions, function(cond) {
 all_altcount$condition <- factor(all_altcount$condition, levels = conditions)
 
 # Relabel T>A/T>C/T>G as A>T/A>G/A>C and flip their sign so up = A>X on the NTS.
-# Done before write.csv so the CSV matches the figure.
+# Done before write.csv so the CSV matches the figure; the CSV keeps both strands
+# even when the figure is NTS only.
 A_RELABEL <- c("T>A" = "A>T", "T>C" = "A>G", "T>G" = "A>C")
 plot_snp_types <- c("C>A", "C>G", "C>T", "A>T", "A>G", "A>C")
 plot_snp_palette <- setNames(unname(snp_type_palette[snp_types]), plot_snp_types)
@@ -406,12 +405,14 @@ all_altcount$snp_type <- factor(relabeled, levels = plot_snp_types)
 
 write.csv(all_altcount, file.path(out_dir, "variant_altcount_in_protospacer.csv"), row.names = FALSE)
 
-altcount_position_totals <- signed_totals(all_altcount, "alt_count")
+# NTS (strand_sign = +1) only unless --both-strands.
+plot_altcount <- if (SHOW_TS) all_altcount else all_altcount[all_altcount$strand_sign == 1L, ]
+altcount_position_totals <- signed_totals(plot_altcount, "alt_count")
 
 # One ggplot per condition (not facet_wrap) so each legend shows its own totals.
 altcount_plots <- lapply(conditions, function(cond) {
-  df <- all_altcount[all_altcount$condition == cond, ]
-  type_labels <- signed_type_labels(df, "alt_count", "%d")
+  df <- plot_altcount[plot_altcount$condition == cond, ]
+  type_labels <- signed_type_labels(df, "alt_count", "%d", show_ts = SHOW_TS)
   altcount_y_lim <- panel_ylim(altcount_position_totals, cond)
 
   ggplot(df, aes(x = position, y = alt_count, fill = snp_type)) +
@@ -420,12 +421,13 @@ altcount_plots <- lapply(conditions, function(cond) {
     # strand labels pinned to the panel's top-left / bottom-left corners
     annotate("text", x = -Inf, y = Inf, label = "NTS", hjust = -0.3, vjust = 1.5,
              fontface = "bold", size = 3.5, family = PLOT_FONT) +
-    annotate("text", x = -Inf, y = -Inf, label = "TS", hjust = -0.3, vjust = -0.5,
-             fontface = "bold", size = 3.5, family = PLOT_FONT) +
+    (if (SHOW_TS) annotate("text", x = -Inf, y = -Inf, label = "TS", hjust = -0.3, vjust = -0.5,
+                           fontface = "bold", size = 3.5, family = PLOT_FONT)) +
     scale_fill_manual(values = plot_snp_palette, labels = type_labels, name = "SNP type", drop = FALSE) +
     scale_x_continuous(breaks = scales::pretty_breaks()) +
     scale_y_continuous(labels = function(v) format(abs(v), big.mark = ",")) +
-    coord_cartesian(xlim = x_range, ylim = c(-altcount_y_lim, altcount_y_lim)) +
+    coord_cartesian(xlim = x_range,
+                    ylim = c(if (SHOW_TS) -altcount_y_lim else 0, altcount_y_lim)) +
     labs(x = X_LAB, y = "Total ALT reads (3 reps)", title = on_target_label[[cond]]) +
     theme_minimal(base_size = 11, base_family = PLOT_FONT) +
     theme(panel.grid.minor = element_blank(),
@@ -438,7 +440,15 @@ p_altcount <- wrap_plots(altcount_plots, ncol = panel_ncol) +
 ggsave(file.path(out_dir, "variant_altcount_in_protospacer.pdf"), p_altcount, width = panel_w, height = panel_h)
 ggsave(file.path(out_dir, "variant_altcount_in_protospacer.png"), p_altcount, width = panel_w, height = panel_h, dpi = 200)
 
-# Differential peaks (BED line count) per off-target NTS A>G edit.
+# Per-edit weight for AF-normalized edit counts: mean AF over all treatment replicates,
+# an uncalled replicate counting as AF 0. A weighted sum equals the edit count if every
+# edit were at AF 1 in every replicate.
+mean_af_all_reps <- function(af_list) {
+  vapply(af_list, function(v) sum(v, na.rm = TRUE) / length(v), numeric(1))
+}
+
+# Differential peaks (BED line count) per AF-weighted off-target NTS edit, one set of
+# outputs per signature: peaks_per_edit_AG.* (ABE) and peaks_per_edit_CT.* (CBE).
 peak_counts <- data.frame(
   condition = conditions,
   n_peaks = vapply(conditions, function(cond) {
@@ -447,39 +457,60 @@ peak_counts <- data.frame(
 )
 peak_counts$condition <- factor(peak_counts$condition, levels = conditions)
 
-# Signature = NTS A>G; n_collapsed_TC (both strands) kept for comparison with older runs.
-signature_edit_counts <- do.call(rbind, lapply(conditions, function(cond) {
-  hits <- hits_by_condition[[cond]]
-  hits <- hits[!hits$on_target, ]
-  data.frame(condition = cond,
-             signature = "A>G (protospacer strand)",
-             n_signature_edits = sum(hits$ps_type == "A>G"),
-             n_strand_resolved_AG = sum(hits$ps_type == "A>G"),
-             n_collapsed_TC = sum(hits$snp_type == "T>C"))
-}))
+# `collapsed` = the 6-class label of the signature; its count (both strands) is
+# kept as n_collapsed_TC / n_collapsed_CT for comparison with older runs.
+PEAKS_PER_EDIT_SIGNATURES <- list(
+  AG = list(sig = "A>G", collapsed = "T>C"),
+  CT = list(sig = "C>T", collapsed = "C>T")
+)
 
-peaks_per_edit <- merge(peak_counts, signature_edit_counts, by = "condition")
-peaks_per_edit$condition <- factor(peaks_per_edit$condition, levels = conditions)
-peaks_per_edit <- peaks_per_edit[order(peaks_per_edit$condition), ]
-peaks_per_edit$peaks_per_edit <- ifelse(peaks_per_edit$n_signature_edits > 0,
-                                         peaks_per_edit$n_peaks / peaks_per_edit$n_signature_edits, NA)
+for (tag in names(PEAKS_PER_EDIT_SIGNATURES)) {
+  s <- PEAKS_PER_EDIT_SIGNATURES[[tag]]
+  collapsed_col <- paste0("n_collapsed_", sub(">", "", s$collapsed, fixed = TRUE))
 
-write.csv(peaks_per_edit, file.path(out_dir, "peaks_per_edit.csv"), row.names = FALSE)
+  signature_edit_counts <- do.call(rbind, lapply(conditions, function(cond) {
+    hits <- hits_by_condition[[cond]]
+    hits <- hits[!hits$on_target, ]
+    is_sig <- hits$ps_type == s$sig
+    df <- data.frame(condition = cond,
+                     signature = sprintf("%s (protospacer strand)", s$sig),
+                     n_signature_edits = sum(is_sig),
+                     n_signature_edits_af = sum(mean_af_all_reps(hits$af_list[is_sig])))
+    df[[collapsed_col]] <- sum(hits$snp_type == s$collapsed)
+    df
+  }))
 
-p_ratio <- ggplot(peaks_per_edit, aes(x = condition, y = peaks_per_edit, fill = condition)) +
-  geom_col(color = "black", linewidth = 0.3, width = 0.7, alpha = 0.9) +
-  geom_text(aes(label = sprintf("%s / %s = %s", format(n_peaks, big.mark = ","), n_signature_edits,
-                                  ifelse(is.na(peaks_per_edit), "NA", sprintf("%.1f", peaks_per_edit)))),
-            vjust = -0.3, size = 3) +
-  scale_fill_manual(values = condition_palette) +
-  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
-  labs(x = NULL,
-       y = "Differential peaks per A>G edit (protospacer strand)") +
-  theme_minimal(base_size = 12, base_family = PLOT_FONT) +
-  theme(legend.position = "none")
+  peaks_per_edit <- merge(peak_counts, signature_edit_counts, by = "condition")
+  peaks_per_edit$condition <- factor(peaks_per_edit$condition, levels = conditions)
+  peaks_per_edit <- peaks_per_edit[order(peaks_per_edit$condition), ]
+  # denominator is AF-weighted; peaks_per_edit_count keeps the unweighted ratio
+  peaks_per_edit$peaks_per_edit <- ifelse(peaks_per_edit$n_signature_edits_af > 0,
+                                           peaks_per_edit$n_peaks / peaks_per_edit$n_signature_edits_af, NA)
+  peaks_per_edit$peaks_per_edit_count <- ifelse(peaks_per_edit$n_signature_edits > 0,
+                                                 peaks_per_edit$n_peaks / peaks_per_edit$n_signature_edits, NA)
 
-ggsave(file.path(out_dir, "peaks_per_edit.pdf"), p_ratio, width = 7, height = 5.5)
-ggsave(file.path(out_dir, "peaks_per_edit.png"), p_ratio, width = 7, height = 5.5, dpi = 200)
+  write.csv(peaks_per_edit, file.path(out_dir, sprintf("peaks_per_edit_%s.csv", tag)), row.names = FALSE)
+
+  p_ratio <- ggplot(peaks_per_edit, aes(x = condition, y = peaks_per_edit, fill = condition)) +
+    geom_col(color = "black", linewidth = 0.3, width = 0.7, alpha = 0.9) +
+    # ratio / peaks / AF-weighted edits, one per line to stay within the bar
+    geom_text(aes(label = sprintf("%s\n%s peaks\n%s AF-wt. edits",
+                                    ifelse(is.na(peaks_per_edit), "NA",
+                                           formatC(peaks_per_edit, format = "f", digits = 1, big.mark = ",")),
+                                    formatC(n_peaks, format = "d", big.mark = ","),
+                                    formatC(n_signature_edits_af, format = "f", digits = 1, big.mark = ","))),
+              vjust = -0.2, size = 2.7, lineheight = 0.95) +
+    scale_fill_manual(values = condition_palette) +
+    scale_y_continuous(labels = scales::label_comma(), expand = expansion(mult = c(0, 0.3))) +
+    labs(x = NULL,
+         y = sprintf("Differential peaks per AF-weighted %s edit (NTS)", s$sig)) +
+    theme_minimal(base_size = 12, base_family = PLOT_FONT) +
+    theme(legend.position = "none",
+          panel.grid.major.x = element_blank())
+
+  ggsave(file.path(out_dir, sprintf("peaks_per_edit_%s.pdf", tag)), p_ratio, width = 8.5, height = 6)
+  ggsave(file.path(out_dir, sprintf("peaks_per_edit_%s.png", tag)), p_ratio, width = 8.5, height = 6, dpi = 200)
+}
 
 # peak_snp_summary.csv: one row per differential peak (on-target included), with
 # mean AF (af_1..20) and NTS-oriented substitution (type_1..20) at each position.
@@ -622,7 +653,9 @@ cat(sprintf("Wrote %s: %d rows x %d columns\n",
             file.path(out_dir, "peak_snp_summary.csv"),
             nrow(peak_snp_summary), ncol(peak_snp_summary)))
 
-# Substrate-normalized rate: off-target NTS A>G edits per available NTS adenine.
+# Substrate-normalized rate: off-target NTS signature edits per available NTS substrate
+# base, one set of outputs per signature: substrate_normalized_summary_AG.* (A>G per
+# adenine) and substrate_normalized_summary_CT.* (C>T per cytosine).
 # Clean within a locus; across loci, seed/guide composition affects the denominator.
 substrate_by_position <- do.call(rbind, lapply(conditions, function(cond) {
   sites <- read_sites_all(file.path(seed_dir, seed_files[[cond]]), cond)
@@ -642,67 +675,115 @@ substrate_by_position <- do.call(rbind, lapply(conditions, function(cond) {
   data.frame(condition = cond, position = seq_len(PROTOSPACER_LEN),
              n_sites = length(spacer),
              n_A = as.integer(colSums(chars == "A", na.rm = TRUE)),
+             n_C = as.integer(colSums(chars == "C", na.rm = TRUE)),
+             n_G = as.integer(colSums(chars == "G", na.rm = TRUE)),
              n_T = as.integer(colSums(chars == "T", na.rm = TRUE)),
              stringsAsFactors = FALSE)
 }))
 
-# observed strand-resolved edits per position, off-target only
+# observed strand-resolved edits per position, off-target only. n_TC / n_GA are the
+# same substitutions on the TS (seen from the NTS), kept for comparison.
+# *_af columns weight each edit by its AF instead of 1:
+#   _af        mean_af_all_reps() (uncalled replicate = AF 0), as in peaks_per_edit
+#   _af_called mean AF over the replicates that called it (the `af` used elsewhere)
 edits_by_position <- do.call(rbind, lapply(conditions, function(cond) {
   hits <- hits_by_condition[[cond]]
   hits <- hits[!hits$on_target, ]
+  af_all <- mean_af_all_reps(hits$af_list)
+  af_called <- ifelse(is.na(hits$af), 0, hits$af)
+  count <- function(type) as.integer(tabulate(hits$position[hits$ps_type == type], PROTOSPACER_LEN))
+  weighted <- function(type, w) {
+    sel <- hits$ps_type == type
+    vapply(seq_len(PROTOSPACER_LEN), function(p) sum(w[sel & hits$position == p]), numeric(1))
+  }
   data.frame(condition = cond, position = seq_len(PROTOSPACER_LEN),
-             # A>G only, whose substrate is a protospacer-strand A
-             n_AG = as.integer(tabulate(hits$position[hits$ps_type == "A>G"], PROTOSPACER_LEN)),
-             n_TC = as.integer(tabulate(hits$position[hits$ps_type == "T>C"], PROTOSPACER_LEN)),
+             n_AG = count("A>G"), n_TC = count("T>C"),
+             n_CT = count("C>T"), n_GA = count("G>A"),
+             n_AG_af = weighted("A>G", af_all), n_AG_af_called = weighted("A>G", af_called),
+             n_CT_af = weighted("C>T", af_all), n_CT_af_called = weighted("C>T", af_called),
              stringsAsFactors = FALSE)
 }))
 
 substrate_rate <- merge(substrate_by_position, edits_by_position,
                          by = c("condition", "position"))
-# Denominator: protospacer-strand adenines.
-substrate_rate$n_denom <- substrate_rate$n_A
 substrate_rate$condition <- factor(substrate_rate$condition, levels = conditions)
 
-# ---- one normalized figure per condition, vs. the un-normalized ratio ------
-substrate_summary <- substrate_rate %>%
-  group_by(condition) %>%
-  summarise(n_sites = first(n_sites),
-            available_A = sum(n_A), available_T = sum(n_T),
-            available_denom = sum(n_denom),
-            edits_AG = sum(n_AG), edits_TC = sum(n_TC),
-            .groups = "drop") %>%
-  mutate(mean_denom_per_site = available_denom / n_sites,
-         edits_per_1k_substrate = 1000 * edits_AG / available_denom,
-         # the un-normalized metric, for side-by-side comparison
-         edits_per_site = edits_AG / n_sites)
-substrate_summary$condition <- factor(substrate_summary$condition, levels = conditions)
+# Denominator: protospacer-strand substrate bases (`sub`). `comp` / comp edit = the
+# complementary base and substitution, reported alongside but not used in the rate.
+SUBSTRATE_SIGNATURES <- list(
+  AG = list(sub = "A", edit = "G", substrate = "adenines"),
+  CT = list(sub = "C", edit = "T", substrate = "cytosines")
+)
 
-write.csv(substrate_summary, file.path(out_dir, "substrate_normalized_summary.csv"), row.names = FALSE)
+# ---- one normalized figure per signature, vs. the un-normalized ratio ------
+for (tag in names(SUBSTRATE_SIGNATURES)) {
+  s <- SUBSTRATE_SIGNATURES[[tag]]
+  comp <- COMPLEMENT[[s$sub]]
+  comp_edit <- COMPLEMENT[[s$edit]]
+  sig_col  <- paste0("n_", s$sub, s$edit)
+  comp_col <- paste0("n_", comp, comp_edit)
 
-p_norm <- ggplot(substrate_summary, aes(x = condition, y = edits_per_1k_substrate, fill = condition)) +
-  geom_col(color = "black", linewidth = 0.3, width = 0.7, alpha = 0.9) +
-  geom_text(aes(label = sprintf("%.1f\n(%s A / %s edits)", edits_per_1k_substrate,
-                                  format(available_denom, big.mark = ","),
-                                  format(edits_AG, big.mark = ","))),
-            vjust = -0.25, size = 2.9, lineheight = 0.95) +
-  scale_fill_manual(values = condition_palette) +
-  scale_y_continuous(expand = expansion(mult = c(0, 0.22))) +
-  labs(x = NULL,
-       y = "A>G edits per 1,000 available adenines") +
-  theme_minimal(base_size = 12, base_family = PLOT_FONT) +
-  theme(legend.position = "none",
-        panel.grid.major.x = element_blank())
+  substrate_summary <- substrate_rate %>%
+    group_by(condition) %>%
+    summarise(n_sites = first(n_sites),
+              available_sub = sum(.data[[paste0("n_", s$sub)]]),
+              available_comp = sum(.data[[paste0("n_", comp)]]),
+              edits_sig = sum(.data[[sig_col]]),
+              edits_sig_af = sum(.data[[paste0(sig_col, "_af")]]),
+              edits_sig_af_called = sum(.data[[paste0(sig_col, "_af_called")]]),
+              edits_comp = sum(.data[[comp_col]]),
+              .groups = "drop") %>%
+    # rates use the AF-weighted numerator (equals the edit count if every edit had AF 1)
+    mutate(available_denom = available_sub,
+           mean_denom_per_site = available_denom / n_sites,
+           edits_per_10k_substrate = 10000 * edits_sig_af / available_denom,
+           edits_per_10k_substrate_count = 10000 * edits_sig / available_denom,
+           # the un-normalized metric, for side-by-side comparison
+           edits_per_site = edits_sig_af / n_sites) %>%
+    select(condition, n_sites, available_sub, available_comp, available_denom,
+           edits_sig, edits_sig_af, edits_sig_af_called, edits_comp, mean_denom_per_site,
+           edits_per_10k_substrate, edits_per_10k_substrate_count, edits_per_site)
+  # e.g. available_A / available_T / edits_AG(_af, _af_called) / edits_TC for A>G
+  sig_name <- paste0("edits_", s$sub, s$edit)
+  names(substrate_summary) <- sub("^available_sub$", paste0("available_", s$sub),
+                              sub("^available_comp$", paste0("available_", comp),
+                              sub("^edits_sig", sig_name,
+                              sub("^edits_comp$", paste0("edits_", comp, comp_edit),
+                                  names(substrate_summary)))))
+  substrate_summary$condition <- factor(substrate_summary$condition, levels = conditions)
+  edits_col <- paste0(sig_name, "_af")
 
-ggsave(file.path(out_dir, "substrate_normalized_summary.pdf"), p_norm, width = 8, height = 6)
-ggsave(file.path(out_dir, "substrate_normalized_summary.png"), p_norm, width = 8, height = 6, dpi = 200)
+  write.csv(substrate_summary, file.path(out_dir, sprintf("substrate_normalized_summary_%s.csv", tag)),
+            row.names = FALSE)
 
-cat("\nSubstrate-normalized summary (off-target only):\n")
-for (i in seq_len(nrow(substrate_summary))) {
-  r <- substrate_summary[i, ]
-  cat(sprintf("  %-14s sites=%5d  substrate=%6d (%.2f/site; A=%d T=%d)  edits=%4d  %6.1f per 1k A   [unnormalized: %.3f edits/site]\n",
-              as.character(r$condition), r$n_sites, r$available_denom, r$mean_denom_per_site,
-              r$available_A, r$available_T, r$edits_AG, r$edits_per_1k_substrate,
-              r$edits_per_site))
+  plot_df <- substrate_summary
+  plot_df$edits <- plot_df[[edits_col]]
+  p_norm <- ggplot(plot_df, aes(x = condition, y = edits_per_10k_substrate, fill = condition)) +
+    geom_col(color = "black", linewidth = 0.3, width = 0.7, alpha = 0.9) +
+    # rate / available bases / AF-weighted edits, one per line to stay within the bar
+    geom_text(aes(label = sprintf("%.2f\n%s %s\n%s AF-wt. edits", edits_per_10k_substrate,
+                                    formatC(available_denom, format = "d", big.mark = ","), s$sub,
+                                    formatC(edits, format = "f", digits = 1, big.mark = ","))),
+              vjust = -0.2, size = 2.9, lineheight = 0.95) +
+    scale_fill_manual(values = condition_palette) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.3))) +
+    labs(x = NULL,
+         y = sprintf("AF-weighted %s>%s edits per 10,000 available %s", s$sub, s$edit, s$substrate)) +
+    theme_minimal(base_size = 12, base_family = PLOT_FONT) +
+    theme(legend.position = "none",
+          panel.grid.major.x = element_blank())
+
+  ggsave(file.path(out_dir, sprintf("substrate_normalized_summary_%s.pdf", tag)), p_norm, width = 8, height = 6)
+  ggsave(file.path(out_dir, sprintf("substrate_normalized_summary_%s.png", tag)), p_norm, width = 8, height = 6, dpi = 200)
+
+  cat(sprintf("\nSubstrate-normalized summary, %s>%s (off-target only):\n", s$sub, s$edit))
+  for (i in seq_len(nrow(substrate_summary))) {
+    r <- substrate_summary[i, ]
+    cat(sprintf("  %-14s sites=%5d  substrate=%6d (%.2f/site; %s=%d %s=%d)  edits=%4d (AF-weighted %.1f)  %7.2f per 10k %s   [unnormalized: %.4f edits/site]\n",
+                as.character(r$condition), r$n_sites, r$available_denom, r$mean_denom_per_site,
+                s$sub, r[[paste0("available_", s$sub)]], comp, r[[paste0("available_", comp)]],
+                r[[sig_name]], r[[edits_col]], r$edits_per_10k_substrate, s$sub, r$edits_per_site))
+  }
 }
 
 
