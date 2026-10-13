@@ -59,7 +59,7 @@
                 "broad_peaks": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Also call MACS2 broad peaks (<sample>_input_broad_peaks.{broadPeak,gappedPeak,xls} in 02_peaks/). Output only: DiffBind and all downstream steps use the sharp peaks."
+                    "description": "Also call EPIC2 broad peaks (<sample>_input_epic2_peaks.bed in 02_peaks/). Output only: DiffBind and all downstream steps use the sharp peaks."
                 }
             }
         },
