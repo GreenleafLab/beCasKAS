@@ -203,7 +203,7 @@ nextflow run main.nf --stage diffbind -resume --nondiff_arm \
 ```
 results/
   01_trim_align/${sample_id}/             # sorted.bam, .bed, .bg, fastqc reports
-  02_peaks/${sample_id}/                   # MACS2 peak BED + xls
+  02_peaks/${sample_id}/                   # MACS2 peak BED + xls (+ *_input_broad_peaks.* with --broad_peaks)
   03_bigwigs/${sample_id}/                 # *.nor.bigWig, *.nor.bg
   04_qc/                                   # FRiP report, correlation PDF/tab
   05_dedup/${sample_id}/                   # *_picard-gencore-dedup.bam
@@ -233,6 +233,7 @@ The pipeline is split into two sub-workflows (selectable with `--stage`, see [St
 |---|---|---|---|
 | `TRIM_ALIGN` | KAS_ANALYZER | `trim_align.nf` | trim_galore + KAS-Analyzer KAS-seq (Bowtie2, KAS-Analyzer's default aligner) |
 | `PEAK_CALL` | KAS_ANALYZER | `analyze.nf` | MACS2 via KAS-Analyzer, treatment vs background |
+| `PEAK_CALL_BROAD` | KAS_ANALYZER | `analyze.nf` | optional MACS2 broad-mode call on the same inputs (`--broad_peaks`); output only |
 | `KAS_STATISTICS` | KAS_ANALYZER | `analyze.nf` | Cohort RPM statistics -> ratios.txt |
 | `NORMALIZE_BIGWIG` | KAS_ANALYZER | `analyze.nf` | RPM-ratio normalized bedGraph + UCSC bigWig |
 | `QC_METRICS` | KAS_ANALYZER | `analyze.nf` | FRiP + multiBigwigSummary correlation |
@@ -268,6 +269,7 @@ Key parameters and their defaults:
 | `--stage` | all | Stage to run: `all` / `kas_analyzer` / `diffbind` |
 | `--genome` | hg38 | Reference file prefix in `--refdir`, e.g. `hg38_no_alt` (see [Required References](#required-references)) |
 | `--clip_r2` | 12 | Bases clipped from 5' of R2 (adaptase library prep) |
+| `--broad_peaks` | false | Also save MACS2 broad peaks per sample; DiffBind and downstream still use sharp peaks |
 | `--fdr` | 0.05 | DiffBind FDR cutoff (cohort default) |
 | `--lfc` | 1 | DiffBind log2 fold-change cutoff (cohort default) |
 | `--min_overlap` | 2 | DiffBind consensus minOverlap (cohort default) |

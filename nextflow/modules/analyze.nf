@@ -42,6 +42,41 @@ process PEAK_CALL {
 
 
 // =====================================================================================
+// PEAK_CALL_BROAD -- optional (--broad_peaks) MACS2 broad-mode call on the same inputs.
+// Output only: DiffBind and everything downstream use PEAK_CALL's sharp peaks.
+// Kept separate from PEAK_CALL so enabling it doesn't invalidate cached sharp calls.
+// =====================================================================================
+
+process PEAK_CALL_BROAD {
+
+    tag "${sample.id}"
+    label 'process_medium'
+
+    input:
+    tuple val(sample), path(sample_bed), path(control_bed)
+    val genome_name
+
+    output:
+    tuple val(sample), path("${sample.id}_input_broad_peaks.broadPeak"),  emit: broadpeak
+    tuple val(sample), path("${sample.id}_input_broad_peaks.gappedPeak"), emit: gappedpeak
+    tuple val(sample), path("${sample.id}_input_broad_peaks.xls"),        emit: macs2_xls
+    tuple val(sample), path("${sample.id}_input_broad_output_macs2.log"), emit: macs2_log, optional: true
+
+    script:
+    """
+    set -euo pipefail
+
+    KAS-Analyzer peakscalling \\
+        -t ${sample_bed} \\
+        -c ${control_bed} \\
+        -b broad \\
+        -o ${sample.id}_input_broad \\
+        -g ${genome_name}
+    """
+}
+
+
+// =====================================================================================
 // KAS_STATISTICS -- cohort RPM ratio computation:
 //   1. KAS-Analyzer statistics aggregates per-sample summaries -> cohort summary
 //   2. Fetch and append deduplicated reads (RPM = 1,000,000 / Deduplicated_reads)

@@ -52,6 +52,17 @@
                 }
             }
         },
+        "peak_call_options": {
+            "title": "peak_call step",
+            "type": "object",
+            "properties": {
+                "broad_peaks": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Also call MACS2 broad peaks (<sample>_input_broad_peaks.{broadPeak,gappedPeak,xls} in 02_peaks/). Output only: DiffBind and all downstream steps use the sharp peaks."
+                }
+            }
+        },
         "staging_options": {
             "title": "Pipeline staging",
             "type": "object",
@@ -248,6 +259,7 @@
         {"$ref": "#/definitions/input_output_options"},
         {"$ref": "#/definitions/reference_options"},
         {"$ref": "#/definitions/trim_align_options"},
+        {"$ref": "#/definitions/peak_call_options"},
         {"$ref": "#/definitions/staging_options"},
         {"$ref": "#/definitions/differential_peaks_options"},
         {"$ref": "#/definitions/reproducibility_options"},

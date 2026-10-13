@@ -4,7 +4,7 @@ nextflow.enable.dsl = 2
 include { validateParameters; paramsSummaryLog; fromSamplesheet } from 'plugin/nf-validation'
 
 include { TRIM_ALIGN }                                                       from './nextflow/modules/trim_align'
-include { PEAK_CALL; KAS_STATISTICS; NORMALIZE_BIGWIG; QC_METRICS }          from './nextflow/modules/analyze'
+include { PEAK_CALL; PEAK_CALL_BROAD; KAS_STATISTICS; NORMALIZE_BIGWIG; QC_METRICS } from './nextflow/modules/analyze'
 include { DEDUP_CONSENSUS }                                                  from './nextflow/modules/picard_gencore_dedup'
 include { SPLIT_BAM_PSEUDOREPS }                                             from './nextflow/modules/split_bam_pseudoreps'
 include { BUILD_DIFFBIND_SAMPLESHEET; DIFFERENTIAL_PEAKS }                   from './nextflow/modules/differential_peaks'
@@ -54,6 +54,9 @@ workflow KAS_ANALYZER {
         .combine(ch_inputs, by: 0)
         .map { ctrl_id, sample, sample_bed, ctrl_bed -> tuple(sample, sample_bed, ctrl_bed) }
     PEAK_CALL(ch_bed_for_peaks, assembly)
+    if (params.broad_peaks) {
+        PEAK_CALL_BROAD(ch_bed_for_peaks, assembly)   // output only; downstream uses sharp peaks
+    }
 
     // Cohort-level RPM ratio computation
     ch_summary_noninput = TRIM_ALIGN.out.summary.filter { sample, summary -> sample.condition != 'background' }
