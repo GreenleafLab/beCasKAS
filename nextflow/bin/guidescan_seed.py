@@ -41,6 +41,12 @@ Output TSV columns are chrom/start/end/strand, effective_mismatches,
 mismatches, rna_bulges, dna_bulges, cfd, match_sequence, seed_hits (number of
 exact-seed anchors found for that peak; 0 means the seed was not found
 anywhere in the peak on either strand), then peak_chrom/peak_start/peak_end.
+With --all-anchors, one row is written per scored anchor instead of one per
+peak, best-ranked first within a peak (so the file is not coordinate-ordered
+even for a sorted BED, which the default mode is); seed_hits stays the
+peak-level count repeated on every row of that peak, not that peak's row count,
+since the bounds check and --mismatches can drop anchors. Needed for wide
+intervals such as EPIC2 broad peaks.
 
 If --raw-hits-outfile is given, also writes the unscored Stage A table: one
 row per exact-seed anchor found (multiple rows per peak when more than one
@@ -143,6 +149,10 @@ def parse_args():
                         "anchor (multiple rows per peak when more than one was found), with "
                         "the ungapped gRNA-binding-site and PAM-binding-site sequences and "
                         "strand, before any DP scoring or ranking.")
+    p.add_argument("--all-anchors", action="store_true",
+                   help="Emit every scored seed anchor per interval, not just the "
+                        "most-likely one. Needed for wide intervals (EPIC2 broad peaks) "
+                        "that can hold many protospacers.")
     p.add_argument("--workdir", default=None,
                    help="Parent dir for per-chunk temp dirs (default: system temp; "
                         "point at $L_SCRATCH/$SCRATCH for very large runs).")
@@ -365,8 +375,10 @@ def process_chunk(job):
     """Stage A (seed anchors) + Stage B (direct DP scoring) for one chunk of
     peaks -- no external binary, no search: the seed already tells us where
     to look, so Stage B only ever scores that one anchored placement per
-    strand. Returns (best, seed_hits, raw_rows): `best` maps peak -> ranked
-    hit dict (peaks with a scorable anchor -- see `mismatches` filter below);
+    strand. Returns (best, seed_hits, raw_rows): `best` maps peak -> list of
+    ranked hit dicts, best first, with one element unless `all_anchors` (the
+    trailing element of `job`) is set (peaks with a scorable anchor -- see
+    `mismatches` filter below);
     `seed_hits` maps every peak in the chunk -> count of exact-seed anchors
     found (0 if none, on either strand); `raw_rows` is one row per anchor
     (multiple rows per peak when Stage A found more than one), from
@@ -375,7 +387,7 @@ def process_chunk(job):
     `job` is a plain tuple so it pickles cleanly to ProcessPoolExecutor workers.
     """
     (chunk, genome, samtools, guide, pam, seed, seed_offset,
-     mismatches, rna_b, dna_b, summit_width, parent_tmp) = job
+     mismatches, rna_b, dna_b, summit_width, parent_tmp, all_anchors) = job
     wd = tempfile.mkdtemp(prefix="grna_seed_chunk_", dir=parent_tmp)
     try:
         spacer_len, pam_len = len(guide), len(pam)
@@ -394,7 +406,7 @@ def process_chunk(job):
 
             _pchrom, ps, pe = peak_key
             peak_center = ps + (pe - ps) / 2.0
-            best_rec = None
+            recs = []
             for strand, anchor in candidates:
                 target = seq if strand == "+" else rc
                 row = raw_hit_row(peak_key, strand, anchor, target, pad_chrom, pad_start,
@@ -415,14 +427,14 @@ def process_chunk(job):
                 cdist = abs(site_center - peak_center)
                 cfd_rank = cfd if cfd == cfd else -1.0
                 key = (-cfd_rank, bulges, cdist)
-                if best_rec is None or key < best_rec["_key"]:
-                    best_rec = dict(chrom=pad_chrom, start=site_start, end=site_end,
-                                     strand=strand, mm=r["mm"], rna=r["rna"], dna=r["dna"],
-                                     eff_mm=r["mm"] + bulges, cfd=cfd,
-                                     seq=target[r["start"]:r["end"] + pam_len],
-                                     pchrom=pad_chrom, pstart=ps, pend=pe, _key=key)
-            if best_rec is not None:
-                best[peak_key] = best_rec
+                recs.append(dict(chrom=pad_chrom, start=site_start, end=site_end,
+                                  strand=strand, mm=r["mm"], rna=r["rna"], dna=r["dna"],
+                                  eff_mm=r["mm"] + bulges, cfd=cfd,
+                                  seq=target[r["start"]:r["end"] + pam_len],
+                                  pchrom=pad_chrom, pstart=ps, pend=pe, _key=key))
+            if recs:
+                recs.sort(key=lambda r: r["_key"])   # one record per anchor: anchors are unique
+                best[peak_key] = recs if all_anchors else recs[:1]
         return best, seed_hits, raw_rows
     finally:
         shutil.rmtree(wd, ignore_errors=True)
@@ -456,7 +468,7 @@ def main():
     chunks = [intervals[i:i + cs] for i in range(0, len(intervals), cs)]
     jobs = [(chunk, args.genome, args.samtools,
              guide, pam, seed, seed_offset, args.mismatches, args.rna_bulges, args.dna_bulges,
-             args.summit_width, args.workdir)
+             args.summit_width, args.workdir, args.all_anchors)
             for chunk in chunks]
     workers = max(1, min(args.workers, len(jobs)))
     sys.stderr.write("%d unique interval(s) -> %d chunk(s) of %d, %d parallel worker(s), seed=%r "
@@ -512,26 +524,28 @@ def main():
     cols = ["chrom", "start", "end", "strand", "effective_mismatches", "mismatches",
             "rna_bulges", "dna_bulges", "cfd", "match_sequence", "seed_hits",
             "peak_chrom", "peak_start", "peak_end"]
-    n_hit = 0
+    n_hit = n_sites = 0
     with open(args.outfile, "w") as out:
         out.write("\t".join(cols) + "\n")
         for peak_key in intervals:      # original BED order
             chrom, s, e = peak_key
             nseed = seed_hits.get(peak_key, 0)
             if peak_key in best:
-                r = best[peak_key]
-                cfd_str = "NA" if r["cfd"] != r["cfd"] else "%.6g" % r["cfd"]
-                out.write("\t".join(str(x) for x in [
-                    r["chrom"], r["start"], r["end"], r["strand"], r["eff_mm"], r["mm"],
-                    r["rna"], r["dna"], cfd_str, r["seq"], nseed,
-                    r["pchrom"], r["pstart"], r["pend"]]) + "\n")
+                for r in best[peak_key]:
+                    cfd_str = "NA" if r["cfd"] != r["cfd"] else "%.6g" % r["cfd"]
+                    out.write("\t".join(str(x) for x in [
+                        r["chrom"], r["start"], r["end"], r["strand"], r["eff_mm"], r["mm"],
+                        r["rna"], r["dna"], cfd_str, r["seq"], nseed,
+                        r["pchrom"], r["pstart"], r["pend"]]) + "\n")
+                    n_sites += 1
                 n_hit += 1
             else:
                 out.write("\t".join(str(x) for x in [chrom, ".", ".", ".", "NA", "NA", "NA", "NA",
                                      "NA", "NA", nseed, chrom, s, e]) + "\n")
     n_no_seed = sum(1 for k in intervals if seed_hits.get(k, 0) == 0)
-    sys.stderr.write("Wrote %s: %d peak(s), %d with a scored site, %d with 0 seed hits\n"
-                     % (args.outfile, len(intervals), n_hit, n_no_seed))
+    sys.stderr.write("Wrote %s: %d peak(s), %d with a scored site, %d scored site(s), "
+                     "%d with 0 seed hits\n"
+                     % (args.outfile, len(intervals), n_hit, n_sites, n_no_seed))
 
 
 

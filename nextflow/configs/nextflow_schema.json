@@ -56,11 +56,6 @@
             "title": "peak_call step",
             "type": "object",
             "properties": {
-                "broad_peaks": {
-                    "type": "boolean",
-                    "default": false,
-                    "description": "Also call EPIC2 broad peaks (<sample>_input_epic2_peaks.bed in 02_peaks/). Output only: DiffBind and all downstream steps use the sharp peaks."
-                }
             }
         },
         "staging_options": {
@@ -194,15 +189,15 @@
                     "minimum": 1,
                     "description": "Stage 2: peaks per GuideScan2 index+enumerate unit. Small on purpose -- each chunk's enum.csv is parsed single-threaded, so smaller chunks parallelise the scoring too."
                 },
-                "nondiff_arm": {
+                "sharp_nondiff": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Run the non-differential arm: a second, separate pass of guidescan seed + variant calling + protospacer over this case's MACS2 treatment peaks that overlap no differential peak. These are R-loops the +/-gRNA contrast could not call differential often due to high endogenous ssDNA at a transcribed locus. Off by default."
+                    "description": "Run the sharp non-differential arm. Off by default."
                 },
-                "broad_arm": {
+                "broad_nondiff": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Run the broad protospacer arm (tier 3): guidescan seed + variant calling + protospacer over EPIC2 broad peaks, consensus-filtered with --min_overlap across the same peaksets DiffBind counts over, minus the differential peaks and the sharp non-differential arm's scored peaks. Finds gRNA-directed off-targets in broad KAS domains. Requires --nondiff_arm. Off by default."
+                    "description": "Run the broad non-differential arm. Off by default."
                 }
             }
         },

@@ -42,8 +42,8 @@ process PEAK_CALL {
 
 
 // =====================================================================================
-// PEAK_CALL_BROAD -- optional (--broad_peaks) EPIC2 broad call on the same inputs.
-// Output only: DiffBind and everything downstream use PEAK_CALL's sharp peaks.
+// PEAK_CALL_BROAD -- EPIC2 broad call on the same inputs, with --broad_nondiff.
+// Feeds the broad protospacer arm; DiffBind and the sharp arms use PEAK_CALL's peaks.
 // Kept separate from PEAK_CALL so enabling it doesn't invalidate cached sharp calls.
 // Ported from KAS-Analyzer main (3d69c38) peakscalling -m epic2 -b broad with control;
 // the container's release version of KAS-Analyzer (v2.0.0) has no EPIC2 support.
