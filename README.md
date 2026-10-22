@@ -271,7 +271,7 @@ Key parameters and their defaults:
 | `--clip_r2` | 12 | Bases clipped from 5' of R2 (adaptase library prep) |
 | `--broad_peaks` | false | Also save EPIC2 broad peaks per sample; DiffBind and downstream still use sharp peaks |
 | `--fdr` | 0.05 | DiffBind FDR cutoff (cohort default) |
-| `--lfc` | 1 | DiffBind log2 fold-change cutoff (cohort default) |
+| `--lfc` | 1 (2 for pseudo-reps) | DiffBind log2 fold-change cutoff (cohort default) |
 | `--min_overlap` | 2 | DiffBind consensus minOverlap (cohort default) |
 | `--greylist` | false | Apply DiffBind greylist masking (cohort default) |
 | `--n_pseudo_replicates` | 3 | Pseudo-rep count when n=1 |
