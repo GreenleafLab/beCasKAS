@@ -72,7 +72,7 @@ af-only-gnomad.hg38.vcf.gz
 af-only-gnomad.hg38.vcf.gz.tbi
 ```
 
-All reference files live flat in `${refdir}/`. The pipeline expects exactly these filenames.
+All reference files live flat in `${refdir}/`. The pipeline expects exactly these filenames. `--genome` sets the prefix: `--genome hg38_no_alt` reads `hg38_no_alt.*` instead of `hg38.*`.
 
 Suggesting staging steps directly use the generated `becaskas.sif` container as dependencies for `samtools` and `bowtie2-build` commands are already bundled inside. Run the following from inside `${refdir}`.
 
@@ -186,14 +186,31 @@ nextflow run main.nf --stage diffbind -resume \
     --samplesheet samples.csv --refdir /path/to/refs --outdir results/
 ```
 
-## The Non-Differential Arm
+## The Non-Differential Arms
 
-`--nondiff_arm` reruns guidescan seed, variant calling and protospacer over
-`nondiff_peaks.bed`, MACS2 treatment peaks that do not overlap a differential peak. Accounts
-for highly transcribed loci with large endogenous ssDNA signal (un-caught gRNA-directed edits).
+Non-differential arms are off by default and run independent workflows to each other. They are enabled with the flags outlined below and both must be specified to run them together.
+
+### Sharp / Narrow (`--sharp_nondiff`)
+
+`--sharp_nondiff` runs guidescan seed, variant calling and protospacer over
+`nondiff_peaks.bed`, MACS2 treatment peaks that do not overlap a differential peak. Accounts for highly transcribed loci with large endogenous ssDNA signal (un-caught gRNA-directed edits).
 
 ```bash
-nextflow run main.nf --stage diffbind -resume --nondiff_arm \
+nextflow run main.nf --stage diffbind -resume --sharp_nondiff \
+    --guidescan_params guidescan_params.json \
+    --samplesheet samples.csv --refdir /path/to/refs --outdir results/
+```
+
+### Broad (`--broad_nondiff`)
+
+`--broad_nondiff` runs EPIC2 to call broad peaks, then guidescan seed, variant calling and protospacer over `broad_regions.bed`. Finds gRNA-directed off-targets in broad KAS-seq domains.
+
+We recommend `--genome hg38_no_alt` as EPIC2 broad peaks tend to map to alt contigs at a higher rate.
+
+**NOTE:** Broad regions overlapping sharp peaks are not subtracted by default. A site inside both may be scored by both arms, but `12_broad_nondiff/<case>/arm_overlap.tsv` and `arm_overlap_venn.pdf` will report the overlaps.
+
+```bash
+nextflow run main.nf --stage diffbind -resume --broad_nondiff \
     --guidescan_params guidescan_params.json \
     --samplesheet samples.csv --refdir /path/to/refs --outdir results/
 ```
@@ -203,7 +220,7 @@ nextflow run main.nf --stage diffbind -resume --nondiff_arm \
 ```
 results/
   01_trim_align/${sample_id}/             # sorted.bam, .bed, .bg, fastqc reports
-  02_peaks/${sample_id}/                   # MACS2 peak BED + xls
+  02_peaks/${sample_id}/                   # MACS2 peak BED + xls (+ *_input_epic2_peaks.bed with --broad_nondiff)
   03_bigwigs/${sample_id}/                 # *.nor.bigWig, *.nor.bg
   04_qc/                                   # FRiP report, correlation PDF/tab
   05_dedup/${sample_id}/                   # *_picard-gencore-dedup.bam
@@ -215,11 +232,17 @@ results/
   08_guidescan/<case>/                     # binding_sites_seed.tsv, binding_sites_enumerate.tsv
   09_variants_subtracted/<case>/           # <case>_vs_control_relcontrol*.vcf
   10_protospacer/                          # cohort figures + CSVs
-  11_nondiff/                              # --nondiff_arm only
+  11_sharp_nondiff/                        # --sharp_nondiff only
     <case>/guidescan/                      # binding_sites_seed.tsv, scored_peaks.bed
     <case>/variants/${sample_id}/          # *.vcf
     <case>/variants_subtracted/            # <case>_vs_control_relcontrol*.vcf
     protospacer/                           # cohort figures + CSVs, non-differential arm
+  12_broad_nondiff/                        # --broad_nondiff only
+    <case>/                                # broad_regions.bed, broad_regions_summary.txt, arm_overlap.tsv, arm_overlap_venn.pdf
+    <case>/guidescan/                      # binding_sites_seed.tsv (all anchors), scored_peaks.bed
+    <case>/variants/${sample_id}/          # *.vcf
+    <case>/variants_subtracted/            # <case>_vs_control_relcontrol*.vcf
+    protospacer/                           # cohort figures + CSVs, broad arm
   pipeline_info/                           # execution_report, timeline, trace, DAG SVG
 ```
 
@@ -227,12 +250,13 @@ results/
 
 The pipeline is split into two sub-workflows (selectable with `--stage`, see [Staged Execution](#staged-execution)):
 - **`KAS_ANALYZER`** (stage 1) - trim/align through the per-case DiffBind samplesheets
-- **`DIFFERENTIAL`** (stage 2) - differential peaks, variants, guidescan, protospacer
+- **`DIFFERENTIAL`** (stage 2) - differential peaks, variants, guidescan, protospacer, plus the optional non-differential and broad arms
 
 | Process | Stage | Source file | Description |
 |---|---|---|---|
 | `TRIM_ALIGN` | KAS_ANALYZER | `trim_align.nf` | trim_galore + KAS-Analyzer KAS-seq (Bowtie2, KAS-Analyzer's default aligner) |
 | `PEAK_CALL` | KAS_ANALYZER | `analyze.nf` | MACS2 via KAS-Analyzer, treatment vs background |
+| `PEAK_CALL_BROAD` | KAS_ANALYZER | `analyze.nf` | EPIC2 broad call on the same inputs; feeds the broad arm (`--broad_nondiff`) |
 | `KAS_STATISTICS` | KAS_ANALYZER | `analyze.nf` | Cohort RPM statistics -> ratios.txt |
 | `NORMALIZE_BIGWIG` | KAS_ANALYZER | `analyze.nf` | RPM-ratio normalized bedGraph + UCSC bigWig |
 | `QC_METRICS` | KAS_ANALYZER | `analyze.nf` | FRiP + multiBigwigSummary correlation |
@@ -245,10 +269,16 @@ The pipeline is split into two sub-workflows (selectable with `--stage`, see [St
 | `GUIDESCAN_ENUMERATE` | DIFFERENTIAL | `guidescan.nf` | GuideScan2 enumerate + CFD over remaining peaks (disable with `--skip_guidescan_enumerate`) |
 | `VARIANT_SUBTRACT` | DIFFERENTIAL | `variant_subtract.nf` | Per case: merge control and treatment replicate VCFs, subtract control positions, AD/DP filter, split CT/AG |
 | `PROTOSPACER` | DIFFERENTIAL | `protospacer.nf` | Cohort-level: variant position within the predicted protospacer, per substitution type (disable with `--skip_protospacer`) |
-| `GUIDESCAN_SEED_NONDIFF` | DIFFERENTIAL | `guidescan.nf` | non-differential arm: seed grep over `nondiff_peaks.bed` (`--nondiff_arm`) |
+| `GUIDESCAN_SEED_NONDIFF` | DIFFERENTIAL | `guidescan.nf` | sharp non-differential arm: seed grep over `nondiff_peaks.bed` (`--sharp_nondiff`) |
 | `CALL_VARIANTS_NONDIFF` | DIFFERENTIAL | `mutect2_call_variants.nf` | non-differential arm: Mutect2 over the arm's scored peaks |
 | `VARIANT_SUBTRACT_NONDIFF` | DIFFERENTIAL | `variant_subtract.nf` | non-differential arm: treatment minus control |
 | `PROTOSPACER_NONDIFF` | DIFFERENTIAL | `protospacer.nf` | non-differential arm: separate figure set, no on-target |
+| `BROAD_REGIONS` | DIFFERENTIAL | `broad_regions.nf` | broad arm: EPIC2 replicate consensus (`--broad_nondiff`) |
+| `GUIDESCAN_SEED_BROAD` | DIFFERENTIAL | `guidescan.nf` | broad arm: seed grep over `broad_regions.bed`, all anchors |
+| `CALL_VARIANTS_BROAD` | DIFFERENTIAL | `mutect2_call_variants.nf` | broad arm: Mutect2 over the arm's scored regions |
+| `VARIANT_SUBTRACT_BROAD` | DIFFERENTIAL | `variant_subtract.nf` | broad arm: treatment minus control |
+| `PROTOSPACER_BROAD` | DIFFERENTIAL | `protospacer.nf` | broad arm: separate figure set, no on-target |
+| `ARM_OVERLAP` | DIFFERENTIAL | `broad_regions.nf` | broad arm: overlap table + Venn of the arms' variant-calling intervals |
 
 ## Replicate Handling
 
@@ -266,9 +296,10 @@ Key parameters and their defaults:
 | Param | Default | Role |
 |---|---|---|
 | `--stage` | all | Stage to run: `all` / `kas_analyzer` / `diffbind` |
+| `--genome` | hg38 | Reference file prefix in `--refdir`, e.g. `hg38_no_alt` (see [Required References](#required-references)) |
 | `--clip_r2` | 12 | Bases clipped from 5' of R2 (adaptase library prep) |
 | `--fdr` | 0.05 | DiffBind FDR cutoff (cohort default) |
-| `--lfc` | 1 | DiffBind log2 fold-change cutoff (cohort default) |
+| `--lfc` | 1 (2 for pseudo-reps) | DiffBind log2 fold-change cutoff (cohort default) |
 | `--min_overlap` | 2 | DiffBind consensus minOverlap (cohort default) |
 | `--greylist` | false | Apply DiffBind greylist masking (cohort default) |
 | `--n_pseudo_replicates` | 3 | Pseudo-rep count when n=1 |
@@ -290,7 +321,8 @@ Key parameters and their defaults:
 | `--skip_protospacer` | false | Skip the cohort-level protospacer position analysis (see [Protospacer Position Analysis](#protospacer-position-analysis)) |
 | `--protospacer_palette` | (none) | JSON map of `case_id` -> hex colour, for exact figure colour parity |
 | `--protospacer_both_strands` | false | `variant_altcount_in_protospacer` plots: also show TS edits below the axis (default: NTS only; the CSV always has both strands) |
-| `--nondiff_arm` | false | Second pass over MACS2 peaks that were not called differential (see [The Non-Differential Arm](#the-non-differential-arm)) |
+| `--sharp_nondiff` | false | Run arm for non-differential MACS2 sharp peaks (see [The Non-Differential Arms](#the-non-differential-arms)) |
+| `--broad_nondiff` | false | Run arm for non-differential EPIC2 broad peaks (see [The Non-Differential Arms](#the-non-differential-arms))|
 
 ## Tool dependencies
 

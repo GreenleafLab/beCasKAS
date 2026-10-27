@@ -2,13 +2,14 @@
 // Stage 1 anchors on an exact seed match and scores that one placement
 // Stage 2 runs GuideScan2 enumerate over remaining peaks with no exact seed anchor
 //
-// Both the differential arm and the non-differential arm (see main.nf) run these processes; the
-// arms differ only in the peak BED they are given and in whether stage 2 runs at all.
+// Three arms (see main.nf) run these processes -- differential, non-differential and broad; the
+// arms differ in the peak BED they are given, in whether stage 2 runs at all, and in
+// gs.all_anchors (stage 1 keeps every anchor per peak instead of the best one).
 
 // Per-case gRNA/seed settings: cases in one run can target different loci, so each
 // field comes from --guidescan_params[case_id] if set, else the global --guidescan_*.
 // Returns null when no gRNA is configured for this case.
-def resolveGuidescanParams(Map overrides, String case_id) {
+def resolveGuidescanParams(Map overrides, String case_id, boolean all_anchors = false) {
     def o    = (overrides[case_id] ?: [:])
     def grna = (o.grna ?: params.guidescan_grna)
     if (!grna) return null
@@ -24,7 +25,7 @@ def resolveGuidescanParams(Map overrides, String case_id) {
         seed = grna.toString()[-5..-1] + pam
     }
 
-    [ grna: grna, pam: pam, seed: seed,
+    [ grna: grna, pam: pam, seed: seed, all_anchors: all_anchors,
       mismatches          : (o.mismatches           != null ? o.mismatches           : params.guidescan_mismatches),
       rna_bulges          : (o.rna_bulges           != null ? o.rna_bulges           : params.guidescan_rna_bulges),
       dna_bulges          : (o.dna_bulges           != null ? o.dna_bulges           : params.guidescan_dna_bulges),
@@ -61,6 +62,7 @@ process GUIDESCAN_SEED {
         --rna-bulges ${gs.rna_bulges} --dna-bulges ${gs.dna_bulges} \\
         --chunk-size ${gs.chunk_size} --workers ${task.cpus} \\
         --summit-width ${gs.summit_width} \\
+        ${gs.all_anchors ? '--all-anchors' : ''} \\
         --workdir . \\
         --outfile binding_sites_seed.tsv \\
         --raw-hits-outfile binding_sites_seed_raw_hits.tsv
@@ -70,7 +72,7 @@ process GUIDESCAN_SEED {
     awk -F'\\t' 'NR > 1 && \$11 == 0 { print \$12 "\\t" \$13 "\\t" \$14 }' \\
         binding_sites_seed.tsv | sort -k1,1 -k2,2n -u > no_seed_peaks.bed
 
-    # Build interval list for non-differential arm (drop unscored sites)
+    # Build interval list for the non-differential arms (drop unscored sites)
     awk -F'\\t' 'NR > 1 && \$2 != "." { print \$12 "\\t" \$13 "\\t" \$14 }' \\
         binding_sites_seed.tsv | sort -k1,1 -k2,2n -u > scored_peaks.bed
     """

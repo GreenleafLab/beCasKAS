@@ -9,6 +9,7 @@ process TRIM_ALIGN {
     input:
     tuple val(sample), path(r1), path(r2)
     path refdir
+    val assembly
 
     output:
     tuple val(sample), path("Bam_files/${sample.id}_sorted.bam"),     emit: bam
@@ -30,7 +31,7 @@ process TRIM_ALIGN {
 
     # KAS-seq align
     REFDIR_ABS=\$(readlink -f ${refdir})
-    KAS-Analyzer KAS-seq -t ${task.cpus} -i \$REFDIR_ABS/hg38 -o ${sample.id} -s hg38 -1 \$R1_TRIM -2 \$R2_TRIM
+    KAS-Analyzer KAS-seq -t ${task.cpus} -i \$REFDIR_ABS/${params.genome} -o ${sample.id} -s ${assembly} -1 \$R1_TRIM -2 \$R2_TRIM
     rm -f ${sample.id}_val_*.fq* ${sample.id}/${sample.id}_val_*.fq* 2>/dev/null || true
     """
 }

@@ -32,7 +32,12 @@
                 "refdir": {
                     "type": "string",
                     "format": "directory-path",
-                    "description": "Directory containing pre-staged hg38 references in a flat layout (all files at the top level, no subdirectories). Required files: hg38.fasta, hg38.fasta.fai, hg38.dict, hg38.genome (chrom sizes), hg38.{1,2,3,4,rev.1,rev.2}.bt2 (bowtie2 index prefix hg38), af-only-gnomad.hg38.vcf.gz(.tbi), 1000g_pon.hg38.vcf.gz(.tbi). User is responsible for staging these files; see README."
+                    "description": "Directory containing pre-staged references in a flat layout (all files at the top level, no subdirectories). Required files, for <genome> = --genome and <assembly> = the part of --genome before the first '_': <genome>.fasta, <genome>.fasta.fai, <genome>.dict, <genome>.genome (chrom sizes), <genome>.{1,2,3,4,rev.1,rev.2}.bt2 (bowtie2 index prefix <genome>), af-only-gnomad.<assembly>.vcf.gz(.tbi), 1000g_pon.<assembly>.vcf.gz(.tbi). Several genomes can share one refdir. User is responsible for staging these files; see README."
+                },
+                "genome": {
+                    "type": "string",
+                    "default": "hg38",
+                    "description": "Reference file prefix in --refdir (e.g. hg38, hg38_no_alt, hg19_no_alt). The part before the first '_' is the assembly: it must be one KAS-Analyzer supports (hg19, hg38, mm10, ...) and names the GATK resources."
                 }
             }
         },
@@ -45,6 +50,12 @@
                     "default": 12,
                     "description": "Bases to clip from 5' of R2 (adaptase library prep)"
                 }
+            }
+        },
+        "peak_call_options": {
+            "title": "peak_call step",
+            "type": "object",
+            "properties": {
             }
         },
         "staging_options": {
@@ -72,8 +83,7 @@
                 },
                 "lfc": {
                     "type": "number",
-                    "default": 1,
-                    "description": "log2 fold-change cutoff"
+                    "description": "log2 fold-change cutoff. Default 1 (2 for pseudoreplicates)"
                 },
                 "min_overlap": {
                     "type": "integer",
@@ -179,10 +189,15 @@
                     "minimum": 1,
                     "description": "Stage 2: peaks per GuideScan2 index+enumerate unit. Small on purpose -- each chunk's enum.csv is parsed single-threaded, so smaller chunks parallelise the scoring too."
                 },
-                "nondiff_arm": {
+                "sharp_nondiff": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Run the non-differential arm: a second, separate pass of guidescan seed + variant calling + protospacer over this case's MACS2 treatment peaks that overlap no differential peak. These are R-loops the +/-gRNA contrast could not call differential often due to high endogenous ssDNA at a transcribed locus. Off by default."
+                    "description": "Run the sharp non-differential arm. Off by default."
+                },
+                "broad_nondiff": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Run the broad non-differential arm. Off by default."
                 }
             }
         },
@@ -243,6 +258,7 @@
         {"$ref": "#/definitions/input_output_options"},
         {"$ref": "#/definitions/reference_options"},
         {"$ref": "#/definitions/trim_align_options"},
+        {"$ref": "#/definitions/peak_call_options"},
         {"$ref": "#/definitions/staging_options"},
         {"$ref": "#/definitions/differential_peaks_options"},
         {"$ref": "#/definitions/reproducibility_options"},

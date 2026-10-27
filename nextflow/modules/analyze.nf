@@ -42,6 +42,48 @@ process PEAK_CALL {
 
 
 // =====================================================================================
+// PEAK_CALL_BROAD -- EPIC2 broad call on the same inputs, with --broad_nondiff.
+// Feeds the broad protospacer arm; DiffBind and the sharp arms use PEAK_CALL's peaks.
+// Kept separate from PEAK_CALL so enabling it doesn't invalidate cached sharp calls.
+// Ported from KAS-Analyzer main (3d69c38) peakscalling -m epic2 -b broad with control;
+// the container's release version of KAS-Analyzer (v2.0.0) has no EPIC2 support.
+// =====================================================================================
+
+process PEAK_CALL_BROAD {
+
+    tag "${sample.id}"
+    label 'process_medium'
+
+    input:
+    tuple val(sample), path(sample_bed), path(control_bed)
+    val genome_name
+
+    output:
+    tuple val(sample), path("${sample.id}_input_epic2_peaks.bed"),  emit: peaks
+    tuple val(sample), path("${sample.id}_input_output_epic2.log"), emit: epic2_log
+
+    script:
+    def prefix = "${sample.id}_input"
+    """
+    set -euo pipefail
+
+    # Chrom sizes bundled with KAS-Analyzer, as upstream uses
+    KAS_DIR=\$(dirname \$(readlink -f \$(command -v KAS-Analyzer)))
+    epic2 -t ${sample_bed} -c ${control_bed} \\
+        --output ${prefix} \\
+        --chromsizes \$KAS_DIR/chrom_size/${genome_name}.chrom.sizes \\
+        --fragment-size 300 \\
+        --false-discovery-rate-cutoff 0.05 \\
+        2> ${prefix}_output_epic2.log
+
+    # Drop strand, keep log2FC >= 0.58 (1.5-fold), as upstream
+    sed "1d" ${prefix} | awk 'BEGIN {print "#Chromosome\\tStart\\tEnd\\tPValue\\tScore\\tChIPCount\\tInputCount\\tFDR\\tlog2FoldChange"} \$10>=0.58 {printf("%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n",\$1,\$2,\$3,\$4,\$5,\$7,\$8,\$9,\$10)}' > ${prefix}_epic2_peaks.bed
+    rm -f ${prefix}
+    """
+}
+
+
+// =====================================================================================
 // KAS_STATISTICS -- cohort RPM ratio computation:
 //   1. KAS-Analyzer statistics aggregates per-sample summaries -> cohort summary
 //   2. Fetch and append deduplicated reads (RPM = 1,000,000 / Deduplicated_reads)

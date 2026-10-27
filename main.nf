@@ -4,7 +4,7 @@ nextflow.enable.dsl = 2
 include { validateParameters; paramsSummaryLog; fromSamplesheet } from 'plugin/nf-validation'
 
 include { TRIM_ALIGN }                                                       from './nextflow/modules/trim_align'
-include { PEAK_CALL; KAS_STATISTICS; NORMALIZE_BIGWIG; QC_METRICS }          from './nextflow/modules/analyze'
+include { PEAK_CALL; PEAK_CALL_BROAD; KAS_STATISTICS; NORMALIZE_BIGWIG; QC_METRICS } from './nextflow/modules/analyze'
 include { DEDUP_CONSENSUS }                                                  from './nextflow/modules/picard_gencore_dedup'
 include { SPLIT_BAM_PSEUDOREPS }                                             from './nextflow/modules/split_bam_pseudoreps'
 include { BUILD_DIFFBIND_SAMPLESHEET; DIFFERENTIAL_PEAKS }                   from './nextflow/modules/differential_peaks'
@@ -13,11 +13,18 @@ include { VARIANT_SUBTRACT }                                                 fro
 include { PROTOSPACER }                                                      from './nextflow/modules/protospacer'
 include { GUIDESCAN_SEED; GUIDESCAN_ENUMERATE; resolveGuidescanParams }      from './nextflow/modules/guidescan'
 
-// Non-differential arm (--nondiff_arm) renamed processes.
+// Sharp non-differential arm (--sharp_nondiff) renamed processes.
 include { GUIDESCAN_SEED   as GUIDESCAN_SEED_NONDIFF   }                       from './nextflow/modules/guidescan'
 include { CALL_VARIANTS    as CALL_VARIANTS_NONDIFF    }                       from './nextflow/modules/mutect2_call_variants'
 include { VARIANT_SUBTRACT as VARIANT_SUBTRACT_NONDIFF }                       from './nextflow/modules/variant_subtract'
 include { PROTOSPACER      as PROTOSPACER_NONDIFF      }                       from './nextflow/modules/protospacer'
+
+// Broad non-differential arm (--broad_nondiff) renamed processes.
+include { BROAD_REGIONS; ARM_OVERLAP }                    from './nextflow/modules/broad_regions'
+include { GUIDESCAN_SEED   as GUIDESCAN_SEED_BROAD   }    from './nextflow/modules/guidescan'
+include { CALL_VARIANTS    as CALL_VARIANTS_BROAD    }    from './nextflow/modules/mutect2_call_variants'
+include { VARIANT_SUBTRACT as VARIANT_SUBTRACT_BROAD }    from './nextflow/modules/variant_subtract'
+include { PROTOSPACER      as PROTOSPACER_BROAD      }    from './nextflow/modules/protospacer'
 
 // Stage One
 workflow KAS_ANALYZER {
@@ -25,8 +32,9 @@ workflow KAS_ANALYZER {
     take:
     ch_samples     // tuple(sample, fastq_1, fastq_2)
     refdir         // the --refdir directory as a file()
-    fasta          // hg38.fasta
-    fasta_fai      // hg38.fasta.fai
+    fasta          // <genome>.fasta
+    fasta_fai      // <genome>.fasta.fai
+    assembly       // KAS-Analyzer assembly id (hg38, hg19)
 
     main:
     // Per-condition replicate counts
@@ -37,7 +45,7 @@ workflow KAS_ANALYZER {
         .set { ch_replicate_counts }
 
     // Trim and align
-    TRIM_ALIGN(ch_samples, refdir)
+    TRIM_ALIGN(ch_samples, refdir, assembly)
     ch_bam = TRIM_ALIGN.out.bam
     ch_bed = TRIM_ALIGN.out.bed
     ch_bg  = TRIM_ALIGN.out.bg
@@ -52,7 +60,12 @@ workflow KAS_ANALYZER {
     ch_bed_for_peaks = ch_treatments
         .combine(ch_inputs, by: 0)
         .map { ctrl_id, sample, sample_bed, ctrl_bed -> tuple(sample, sample_bed, ctrl_bed) }
-    PEAK_CALL(ch_bed_for_peaks, 'hg38')
+    PEAK_CALL(ch_bed_for_peaks, assembly)
+    ch_broad_peaks = Channel.empty()
+    if (params.broad_nondiff) {
+        PEAK_CALL_BROAD(ch_bed_for_peaks, assembly)
+        ch_broad_peaks = PEAK_CALL_BROAD.out.peaks
+    }
 
     // Cohort-level RPM ratio computation
     ch_summary_noninput = TRIM_ALIGN.out.summary.filter { sample, summary -> sample.condition != 'background' }
@@ -64,7 +77,7 @@ workflow KAS_ANALYZER {
     ch_bg.filter { sample, bg -> sample.condition != 'background' }
          .collect { sample, bg -> bg }
          .set { all_bg }
-    NORMALIZE_BIGWIG(all_bg, KAS_STATISTICS.out.ratios, KAS_STATISTICS.out.labels, 'hg38')
+    NORMALIZE_BIGWIG(all_bg, KAS_STATISTICS.out.ratios, KAS_STATISTICS.out.labels, assembly)
 
     // QC metrics - non-background samples only
     ch_bed_noninput = ch_bed.filter { sample, bed -> sample.condition != 'background' }
@@ -140,6 +153,7 @@ workflow KAS_ANALYZER {
 
     emit:
     samplesheets = ch_case_samplesheets    // tuple(case_id, csv)
+    broad_peaks  = ch_broad_peaks          // tuple(sample, epic2 bed); empty unless --broad_nondiff
     dedup        = ch_dedup                // tuple(sample, bam, bai)
 }
 
@@ -149,6 +163,7 @@ workflow DIFFERENTIAL {
     take:
     ch_case_samplesheets   // tuple(case_id, csv)
     ch_dedup               // tuple(sample, bam, bai)
+    ch_broad_peaks         // tuple(sample, epic2 bed); empty unless --broad_nondiff
     fasta
     fasta_fai
     fasta_dict
@@ -262,7 +277,12 @@ workflow DIFFERENTIAL {
             ch_no_seed.empty.subscribe { case_id, bed, gs ->
                 log.info "GUIDESCAN: case '${case_id}' has no unanchored peaks -- skipping enumerate"
             }
-            GUIDESCAN_ENUMERATE(ch_no_seed.with_residue, fasta, fasta_fai)
+            GUIDESCAN_ENUMERATE(
+                ch_no_seed.with_residue
+                    .map { case_id, bed, gs -> tuple(case_id, bed, gs.findAll { k, v -> k != 'all_anchors' }) },
+                fasta,
+                fasta_fai
+            )
             ch_enumerate_sites = GUIDESCAN_ENUMERATE.out.binding_sites
         }
 
@@ -293,7 +313,7 @@ workflow DIFFERENTIAL {
         }
 
         // For highly transcribed loci (high endogenous ssDNA) that cannot clear DiffBind thresholds.
-        if (params.nondiff_arm) {
+        if (params.sharp_nondiff) {
             ch_nondiff_jobs = DIFFERENTIAL_PEAKS.out.nondiff_peaks
                 .filter { case_id, bed -> bed.size() > 0 }
                 .map    { case_id, bed -> tuple(case_id, bed, resolveGuidescanParams(guidescanOverrides, case_id)) }
@@ -346,6 +366,103 @@ workflow DIFFERENTIAL {
                 )
             }
         }
+
+        // Broad arm
+        if (params.broad_nondiff) {
+            ch_broad_ctrl_by_case = ch_broad_peaks
+                .filter  { sample, peaks -> sample.condition == 'control' }
+                .combine(ch_cases_only)
+                .map     { sample, peaks, case_id -> tuple(case_id, peaks) }
+            ch_broad_trt_by_case = ch_broad_peaks
+                .filter  { sample, peaks -> sample.condition != 'control' }
+                .map     { sample, peaks -> tuple(sample.condition, peaks) }
+            // Sort by peakset name
+            ch_broad_by_case = ch_broad_ctrl_by_case.mix(ch_broad_trt_by_case)
+                .groupTuple()
+                .map { case_id, ps -> tuple(case_id, ps.sort { it.name }) }
+
+            ch_broad_min_overlap = ch_cases_only.map { case_id ->
+                def o  = (diffbindParams[case_id] ?: [:])
+                def mo = (o['dba.count']?.minOverlap != null) ? o['dba.count'].minOverlap
+                                                              : params.min_overlap
+                if (!(mo instanceof Integer) || mo < 1) {
+                    error("case '${case_id}': dba.count.minOverlap=${mo} -- the broad arm needs " +
+                          "an integer >= 1 (DiffBind's fractional minOverlap is not supported by the broad arm)")
+                }
+                tuple(case_id, mo as int)
+            }
+
+            BROAD_REGIONS(ch_broad_by_case.join(ch_broad_min_overlap))
+
+            ch_broad_regions = BROAD_REGIONS.out.regions.branch { case_id, bed ->
+                with_regions: bed.size() > 0
+                empty       : true
+            }
+            ch_broad_regions.empty.subscribe { case_id, bed ->
+                log.warn "BROAD_REGIONS: case '${case_id}' has no broad consensus regions -- skipping the broad arm"
+            }
+            ch_broad_jobs = ch_broad_regions.with_regions
+                .map    { case_id, bed -> tuple(case_id, bed, resolveGuidescanParams(guidescanOverrides, case_id, true)) }
+                .filter { case_id, bed, gs -> gs != null }
+            GUIDESCAN_SEED_BROAD(ch_broad_jobs, fasta, fasta_fai)
+
+            // Overlap with the other arms is reported here instead of subtracted from the broad regions.
+            // join(remainder) emits the bare case_id, not (case_id, null), if the right side never emits.
+            ch_sharp_scored = ch_cases_only
+                .join(params.sharp_nondiff ? GUIDESCAN_SEED_NONDIFF.out.scored_peaks : Channel.empty(), remainder: true)
+                .map { row -> row instanceof List ? tuple(row[0], row[1] ?: []) : tuple(row, []) }
+            ARM_OVERLAP(
+                DIFFERENTIAL_PEAKS.out.bed
+                    .join(ch_sharp_scored)
+                    .join(GUIDESCAN_SEED_BROAD.out.scored_peaks)
+            )
+
+            // variant calling is restricted to peaks with a scored site
+            ch_broad_variant_jobs = ch_ctrl_by_case.mix(ch_trt_by_case)
+                .combine(GUIDESCAN_SEED_BROAD.out.scored_peaks.filter { id, bed -> bed.size() > 0 }, by: 0)
+                .map { case_id, sample, bam, bai, bed -> tuple(case_id, sample, bam, bai, bed) }
+            CALL_VARIANTS_BROAD(
+                ch_broad_variant_jobs,
+                fasta, fasta_fai, fasta_dict, gnomad, gnomad_tbi, pon, pon_tbi
+            )
+
+            ch_broad_subtract = CALL_VARIANTS_BROAD.out.vcf_no_alt
+                .map { case_id, sample, vcf ->
+                    tuple(case_id, sample.condition == 'control' ? 'control' : 'treatment', sample.id, vcf)
+                }
+                .groupTuple(by: 0)
+                .map { case_id, groups, sample_ids, vcfs ->
+                    def ci = (0..<groups.size()).findAll { groups[it] == 'control'   }.sort { sample_ids[it] }
+                    def ti = (0..<groups.size()).findAll { groups[it] == 'treatment' }.sort { sample_ids[it] }
+                    tuple(case_id,
+                          ci.collect { sample_ids[it] }, ci.collect { vcfs[it] },
+                          ti.collect { sample_ids[it] }, ti.collect { vcfs[it] })
+                }
+                .filter { case_id, ctrl_ids, ctrl_vcfs, trt_ids, trt_vcfs -> ctrl_ids && trt_ids }
+            VARIANT_SUBTRACT_BROAD(ch_broad_subtract)
+
+            if (!params.skip_protospacer) {
+                ch_broad_protospacer_in = GUIDESCAN_SEED_BROAD.out.binding_sites
+                    .join(BROAD_REGIONS.out.regions)
+                    .join(VARIANT_SUBTRACT_BROAD.out.no_alt)
+                    .join(ch_tumors_by_case)
+                    .join(ch_broad_jobs.map { case_id, bed, gs -> tuple(case_id, gs.grna) })
+                    .toList()
+                    .filter { rows -> rows.size() > 0 }
+                    .map { rows ->
+                        tuple(rows.collect { it[0] }, rows.collect { it[1] }, rows.collect { it[2] },
+                              rows.collect { it[3] }, rows.collect { it[4] }, rows.collect { it[5] })
+                    }
+                // No enumerate in this arm, and the on-target site need not fall in a broad region.
+                PROTOSPACER_BROAD(
+                    ch_broad_protospacer_in,
+                    Channel.value(tuple([], [])),
+                    fasta,
+                    fasta_fai,
+                    true
+                )
+            }
+        }
     }
 }
 
@@ -369,14 +486,21 @@ workflow {
         error("Missing required --refdir. See README for required layout.")
     }
     def refdir        = params.refdir
-    def fasta         = file("${refdir}/hg38.fasta",                       checkIfExists: true)
-    def fasta_fai     = file("${refdir}/hg38.fasta.fai",                   checkIfExists: true)
-    def fasta_dict    = file("${refdir}/hg38.dict",                        checkIfExists: true)
-    file("${refdir}/hg38.1.bt2",                                           checkIfExists: true)
-    def gnomad        = file("${refdir}/af-only-gnomad.hg38.vcf.gz",       checkIfExists: true)
-    def gnomad_tbi    = file("${refdir}/af-only-gnomad.hg38.vcf.gz.tbi",   checkIfExists: true)
-    def pon           = file("${refdir}/1000g_pon.hg38.vcf.gz",            checkIfExists: true)
-    def pon_tbi       = file("${refdir}/1000g_pon.hg38.vcf.gz.tbi",        checkIfExists: true)
+    def genome        = params.genome                         // reference file prefix, e.g. hg38, hg38_no_alt, hg19
+    def assembly      = genome.split('_')[0]                  // assembly id for KAS-Analyzer and the GATK resources
+    // KAS-Analyzer 2.0.0 ships blacklists/chrom sizes for these assemblies only
+    def kas_assemblies = ['hg18', 'hg19', 'hg38', 'mm9', 'mm10', 'mm39', 'ce10', 'ce11', 'dm3', 'dm6', 'rn6', 'rn7', 'danRer10', 'danRer11']
+    if (!(assembly in kas_assemblies)) {
+        error("Invalid --genome '${genome}': '${assembly}' (the part before the first '_') must be a KAS-Analyzer assembly: ${kas_assemblies.join(', ')}.")
+    }
+    def fasta         = file("${refdir}/${genome}.fasta",                         checkIfExists: true)
+    def fasta_fai     = file("${refdir}/${genome}.fasta.fai",                     checkIfExists: true)
+    def fasta_dict    = file("${refdir}/${genome}.dict",                          checkIfExists: true)
+    file("${refdir}/${genome}.1.bt2",                                             checkIfExists: true)
+    def gnomad        = file("${refdir}/af-only-gnomad.${assembly}.vcf.gz",       checkIfExists: true)
+    def gnomad_tbi    = file("${refdir}/af-only-gnomad.${assembly}.vcf.gz.tbi",   checkIfExists: true)
+    def pon           = file("${refdir}/1000g_pon.${assembly}.vcf.gz",            checkIfExists: true)
+    def pon_tbi       = file("${refdir}/1000g_pon.${assembly}.vcf.gz.tbi",        checkIfExists: true)
 
     // Parse samplesheet
     Channel
@@ -393,7 +517,7 @@ workflow {
         .set { ch_samples }
 
     // Run Stage One
-    KAS_ANALYZER(ch_samples, file(refdir), fasta, fasta_fai)
+    KAS_ANALYZER(ch_samples, file(refdir), fasta, fasta_fai, assembly)
 
     // Stage Two (--stage diffbind)
     if (params.stage in ['all', 'diffbind']) {
@@ -408,6 +532,7 @@ workflow {
         DIFFERENTIAL(
             ch_case_samplesheets,
             KAS_ANALYZER.out.dedup,
+            KAS_ANALYZER.out.broad_peaks,
             fasta,
             fasta_fai,
             fasta_dict,

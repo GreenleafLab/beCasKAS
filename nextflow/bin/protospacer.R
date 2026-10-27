@@ -986,6 +986,7 @@ for (cond in conditions) {
     if (outside > 0) {
       warning(sprintf("%s/%s: %d %s edit(s) outside protospacer positions 1-%d (bulged site longer than the spacer); they cannot appear in the possible file",
                       cond, ed, outside, sig, PROTOSPACER_LEN))
+      keep <- keep[ps_pos[keep] >= 1L & ps_pos[keep] <= PROTOSPACER_LEN]
     }
 
     o <- list(

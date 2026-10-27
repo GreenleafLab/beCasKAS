@@ -93,7 +93,6 @@ if (sys.nframe() == 0L && !interactive()) {
     pipeline_ss <- read.csv(args$samplesheet, stringsAsFactors = FALSE)
     dbp      <- read_diffbind_params(args$`diffbind-params`)
     fdr_cut  <- if (!is.null(dbp$fdr))      dbp$fdr      else args$fdr
-    lfc_cut  <- if (!is.null(dbp$lfc))      dbp$lfc      else args$lfc
     greylist <- if (!is.null(dbp$greylist)) dbp$greylist else args$greylist
 
     # Compute per-condition rep counts for metadata
@@ -106,6 +105,8 @@ if (sys.nframe() == 0L && !interactive()) {
     dba_ss <- build_diffbind_samplesheet(pipeline_ss)
 
     is_pseudo_regime <- any(grepl("_pseudo[0-9]+$", dba_ss$SampleID))
+    # Default to stricter fold cutoff for pseudoreplicates
+    lfc_cut <- if (!is.null(dbp$lfc)) dbp$lfc else if (is_pseudo_regime) 2 else args$lfc
 
     # Run DiffBind
     samples <- dba(sampleSheet = dba_ss)
@@ -135,7 +136,7 @@ if (sys.nframe() == 0L && !interactive()) {
 
     # Color column for volcano/MA
     report$color <- "NS"
-    report$color[report$FDR < fdr_cut & report$Fold >  1] <- "Up"
+    report$color[report$FDR < fdr_cut & report$Fold >  lfc_cut] <- "Up"
     report$color[report$FDR < fdr_cut & report$Fold < 1]  <- "Down"
 
     # Volcano plot
