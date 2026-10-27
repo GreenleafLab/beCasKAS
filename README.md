@@ -264,7 +264,7 @@ The pipeline is split into two sub-workflows (selectable with `--stage`, see [St
 | `SPLIT_BAM_PSEUDOREPS` | KAS_ANALYZER | `split_bam_pseudoreps.nf` | (conditional) deterministic BAM partition for n=1 conditions |
 | `BUILD_DIFFBIND_SAMPLESHEET` | DIFFERENTIAL | `differential_peaks.nf` | Fan the cohort into one DiffBind samplesheet per treatment case (stage 1 stops here) |
 | `DIFFERENTIAL_PEAKS` | DIFFERENTIAL | `differential_peaks.nf` | DiffBind (DESeq2 backend); one control-vs-case contrast per case, output under `06_differential/<case>/` |
-| `CALL_VARIANTS` | DIFFERENTIAL | `mutect2_call_variants.nf` | Mutect2 tumor-only + germline + PoN, per case, restricted to that case's differential peaks |
+| `CALL_VARIANTS` | DIFFERENTIAL | `mutect2_call_variants.nf` | Mutect2 tumor-only + germline + PoN, per case, restricted to that case's differential peaks. Controls add `--genotype-pon-sites` so PoN germline variants are called and `VARIANT_SUBTRACT` can remove them |
 | `GUIDESCAN_SEED` | DIFFERENTIAL | `guidescan.nf` | Exact-seed grep + bounded-DP CFD scoring; most-likely gRNA binding site per differential peak (requires `--guidescan_grna` or `--guidescan_params`) |
 | `GUIDESCAN_ENUMERATE` | DIFFERENTIAL | `guidescan.nf` | GuideScan2 enumerate + CFD over remaining peaks (disable with `--skip_guidescan_enumerate`) |
 | `VARIANT_SUBTRACT` | DIFFERENTIAL | `variant_subtract.nf` | Per case: merge control and treatment replicate VCFs, subtract control positions, AD/DP filter, split CT/AG |

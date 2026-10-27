@@ -23,6 +23,7 @@ process CALL_VARIANTS {
     tuple val(case_id), val(sample), path("${sample.id}.vcf"),            emit: vcf_raw
 
     script:
+    def pon_sites = sample.condition == 'control' ? '--genotype-pon-sites' : ''
     """
     set -euo pipefail
 
@@ -36,7 +37,7 @@ process CALL_VARIANTS {
         -I ${sample.id}_diffbind.bam \\
         --native-pair-hmm-threads ${task.cpus} \\
         --germline-resource ${gnomad} \\
-        --panel-of-normals ${pon} \\
+        --panel-of-normals ${pon} ${pon_sites} \\
         -O ${sample.id}.vcf
 
     # Atomize multi-allelic sites
