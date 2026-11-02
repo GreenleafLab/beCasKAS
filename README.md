@@ -6,25 +6,34 @@ Detects non-coding off-target base editor unwinding and editing in primary cells
 
 ## Quick start
 ### Requirements
-- [Nextflow](https://www.nextflow.io/) >= 25.10.0
+- [Nextflow](https://www.nextflow.io/) >= 25.04.0
 - [Apptainer](https://apptainer.org/docs/admin/main/installation.html) >= 1.2.0
 - ~50 GB scratch space + reference data (~30 GB for hg38 + GATK resources)
 
 ### Run Command
 
+Clone the repository (check out a release tag), build the container (see [Container support](#container-support)), stage the references (see [Required References](#required-references)), then run:
+
 ```bash
-nextflow run GreenleafLab/beCasKAS \
+git clone https://github.com/GreenleafLab/beCasKAS.git
+cd beCasKAS
+apptainer build becaskas.sif env/becaskas.def
+
+nextflow run main.nf \
     --samplesheet samples.csv \
     --refdir /path/to/refs \
-    --outdir results/
+    --outdir results/ \
+    --partition <your_partitions>
 ```
 
 The pipeline does not download references per run. They must be staged in a directory and passed to `--refdir`.
 
-By default, the pipeline is configured for a SLURM/HPC cluster (`-profile slurm`). To submit a thin driver job see [submit_example.sbatch](examples/submit_example.sbatch) for a template. To run on a single local machine, add `-profile local`, which switches to the local executor and automatically caps each job's resource request to the CPUs/RAM available on that machine:
+Run `nextflow run main.nf --help` to list every parameter with its description and default.
+
+By default, the pipeline is configured for a SLURM/HPC cluster (`-profile slurm`). Each task is submitted to `--partition`, whose default is `normal`, Sherlock's general partition: set it to partitions your account can use, especially on other clusters. To submit a thin driver job see [submit_example.sbatch](examples/submit_example.sbatch) for a template. To run on a single local machine, add `-profile local`, which switches to the local executor and automatically caps each job's resource request to the CPUs/RAM available on that machine:
 
 ```bash
-nextflow run GreenleafLab/beCasKAS -profile local \
+nextflow run main.nf -profile local \
     --samplesheet samples.csv \
     --refdir /path/to/refs \
     --outdir results/
@@ -47,7 +56,7 @@ By default the pipeline expects `becaskas.sif` at the repository root. To use a 
 nextflow run main.nf --container /abs/path/to/becaskas.sif ...
 ```
 
-Apptainer is the default container runtime (configured in [nextflow.config](nextflow.config)) and works for both the default SLURM/HPC target and `-profile local`. A Docker profile is pre-configured, but requires separate installation.
+Apptainer is the default container runtime (configured in [nextflow.config](nextflow.config)) and works for both the default SLURM/HPC target and `-profile local`. A Docker profile is defined, but no Docker image is published. Build your own following [env/becaskas.def](env/becaskas.def) and pass it with `--container`.
 
 ## Required References
 
@@ -57,7 +66,6 @@ Stage the following reference layout under `--refdir`:
 hg38.fasta                              # UCSC hg38 fasta
 hg38.fasta.fai                          # samtools faidx
 hg38.dict                               # samtools dict
-hg38.genome                             # chromosome sizes (UCSC chrom.sizes)
 
 hg38.1.bt2                              # bowtie2 indices
 hg38.2.bt2
@@ -74,16 +82,15 @@ af-only-gnomad.hg38.vcf.gz.tbi
 
 All reference files live flat in `${refdir}/`. The pipeline expects exactly these filenames. `--genome` sets the prefix: `--genome hg38_no_alt` reads `hg38_no_alt.*` instead of `hg38.*`.
 
-Suggesting staging steps directly use the generated `becaskas.sif` container as dependencies for `samtools` and `bowtie2-build` commands are already bundled inside. Run the following from inside `${refdir}`.
+The staging steps below use the `becaskas.sif` container, which already bundles `samtools` and `bowtie2-build`. Run them from inside `${refdir}`.
 
-1. Download UCSC `hg38.fa.gz` from [UCSC HG38 Download Page](https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz),`gunzip` and rename to `hg38.fasta`.
+1. Download UCSC `hg38.fa.gz` from [UCSC HG38 Download Page](https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz), `gunzip` and rename to `hg38.fasta`.
 
-2. Build the fasta index/dict, the Bowtie2 index (~30 to 60 minutes; produces the six `hg38.*.bt2` files), and the chrom.sizes (specify your specific path to `becaskas.sif`):
+2. Build the fasta index/dict and the Bowtie2 index (~30 to 60 minutes; produces the six `hg38.*.bt2` files). Point to your `becaskas.sif`:
 ```bash
 apptainer exec becaskas.sif samtools faidx hg38.fasta
 apptainer exec becaskas.sif samtools dict hg38.fasta -o hg38.dict
 apptainer exec becaskas.sif bowtie2-build hg38.fasta hg38
-cut -f1,2 hg38.fasta.fai > hg38.genome   # chrom.sizes from the .fai above, or download from UCSC
 ```
 
 3. Download the GATK somatic resources:
@@ -101,16 +108,16 @@ CSV with columns: `sample_id`, `fastq_1`, `fastq_2`, `condition`, `replicate`, `
 
 | Column | Required | Description |
 |---|---|---|
-| `sample_id` | yes | Unique sample identifier |
-| `fastq_1` | yes | Path/URL to R1 FASTQ |
-| `fastq_2` | no | Path/URL to R2 FASTQ (omit for single-end) |
-| `condition` | yes | Reserved: `background` (MACS2 input) and `control` (shared reference). Any other label defines a treatment case compared against `control`. |
-| `replicate` | yes | Replicate number within condition |
-| `background_id` | conditional | sample_id of the `background` row used as MACS2 `-c` |
+| `sample_id` | yes | Unique sample identifier (letters, digits, `_`, `.`, `-`) |
+| `fastq_1` | yes | Path/URL to R1 FASTQ (`.fastq`, `.fq`, optionally `.gz`) |
+| `fastq_2` | yes | Path/URL to R2 FASTQ. The pipeline is paired-end only. |
+| `condition` | yes | Letters, digits and `_`. Reserved: `background` (MACS2 input) and `control` (shared reference). Any other label defines a treatment case compared against `control`; the label becomes the `case_id` used in output paths and JSON overrides. |
+| `replicate` | yes | Replicate number within condition (positive integer) |
+| `background_id` | conditional | Required on every non-`background` row: the sample_id of the `background` row used as MACS2 `-c` |
 
 ## Staged Execution
 
-The pipeline runs in two stages, selected with `--stage`:
+The pipeline runs as two stages (see [Pipeline Structure](#pipeline-structure)).
 
 - `--stage all` (default) - full pipeline end to end.
 - `--stage kas_analyzer` - run everything through the per-case DiffBind samplesheet generation, then stop. The samplesheets are published to `results/06_differential/samplesheets/` and the case summary is printed to the run log.
@@ -151,10 +158,10 @@ Only the overridden case's `DIFFERENTIAL_PEAKS` and its downstream will re-execu
 
 ## Predicting gRNA Binding Sites
 
-Set `--guidescan_grna` to enable these steps.
+Set `--guidescan_grna` (or `--guidescan_params`) to enable these steps.
 
 Given a base editor gRNA (protospacer + PAM), the pipeline reports the most likely
-binding site per differential peak, via GuideScan2 and CFD scoring, in two stages:
+binding site per differential peak, scored with Doench 2016 CFD, in two stages:
 
 **Stage 1 - `GUIDESCAN_SEED`** Greps each peak and its reverse
 complement for an exact *seed* match (a substring of spacer + PAM: by default the
@@ -219,31 +226,35 @@ nextflow run main.nf --stage diffbind -resume --broad_nondiff \
 
 ```
 results/
-  01_trim_align/${sample_id}/             # sorted.bam, .bed, .bg, fastqc reports
-  02_peaks/${sample_id}/                   # MACS2 peak BED + xls (+ *_input_epic2_peaks.bed with --broad_nondiff)
+  01_trim_align/${sample_id}/              # sorted BAM + index, .bed, .bg, mapping summary, FastQC + trimming reports
+  02_peaks/${sample_id}/                   # MACS2 peaks (.bed, .xls, .narrowPeak, summits) (+ *_input_epic2_peaks.bed with --broad_nondiff)
+  03_normalization/                        # KAS_statistics_summary*.txt, ratios.txt (RPM scaling factors)
   03_bigwigs/${sample_id}/                 # *.nor.bigWig, *.nor.bg
-  04_qc/                                   # FRiP report, correlation PDF/tab
-  05_dedup/${sample_id}/                   # *_picard-gencore-dedup.bam
+  04_qc/                                   # FRiP report, bigWig correlation (all-deeptools.pdf, all.tab, all.npz)
+  05_dedup/${sample_id}/                   # *_picard-gencore-dedup.bam + index, picard metrics, gencore report
     pseudoreps/                            # (only if n=1) pseudo-rep BAMs
   06_differential/
     samplesheets/                          # diffbind_samplesheet_<case>.csv (editable; --diffbind_samplesheet_dir)
-    <case>/                                # differential_peaks.bed, nondiff_peaks.bed, full TSV, volcano, MA plot, dba_object.rds, method.txt
-  07_variants/<case>/${sample_id}/         # *.vcf, *_no-alt-chr.vcf, *_CT.vcf, *_AG.vcf
-  08_guidescan/<case>/                     # binding_sites_seed.tsv, binding_sites_enumerate.tsv
-  09_variants_subtracted/<case>/           # <case>_vs_control_relcontrol*.vcf
-  10_protospacer/                          # cohort figures + CSVs
+    <case>/                                # differential_peaks.bed, nondiff_peaks.bed, differential_peaks_full.tsv, volcano.pdf,
+                                           #   ma_plot.pdf, dba_object.rds, differential_peaks_method.txt
+  07_variants/<case>/${sample_id}/         # Mutect2 VCFs: *.vcf (raw), *_no-alt-chr.vcf, *_CT.vcf, *_AG.vcf
+  08_guidescan/<case>/                     # binding_sites_seed.tsv, binding_sites_enumerate.tsv, binding_sites_seed_raw_hits.tsv,
+                                           #   scored_peaks.bed, no_seed_peaks.bed (stage 2 input)
+  09_variants_subtracted/<case>/           # <case>_vs_control_relcontrol_filt_{no-alt-chr,CT,AG}.vcf
+  10_protospacer/                          # cohort figures, CSVs and vcf/ (see Protospacer Position Analysis)
   11_sharp_nondiff/                        # --sharp_nondiff only
     <case>/guidescan/                      # binding_sites_seed.tsv, scored_peaks.bed
     <case>/variants/${sample_id}/          # *.vcf
-    <case>/variants_subtracted/            # <case>_vs_control_relcontrol*.vcf
+    <case>/variants_subtracted/            # <case>_vs_control_relcontrol_filt_{no-alt-chr,CT,AG}.vcf
     protospacer/                           # cohort figures + CSVs, non-differential arm
   12_broad_nondiff/                        # --broad_nondiff only
     <case>/                                # broad_regions.bed, broad_regions_summary.txt, arm_overlap.tsv, arm_overlap_venn.pdf
     <case>/guidescan/                      # binding_sites_seed.tsv (all anchors), scored_peaks.bed
     <case>/variants/${sample_id}/          # *.vcf
-    <case>/variants_subtracted/            # <case>_vs_control_relcontrol*.vcf
+    <case>/variants_subtracted/            # <case>_vs_control_relcontrol_filt_{no-alt-chr,CT,AG}.vcf
     protospacer/                           # cohort figures + CSVs, broad arm
-  pipeline_info/                           # execution_report, timeline, trace, DAG SVG
+  pipeline_info/                           # report.html, timeline.html, trace.txt, pipeline_dag.svg (.dot without Graphviz)
+  pipeline.success                         # or pipeline.failure when the run ends (pipeline.running while it runs)
 ```
 
 ## Pipeline Structure
@@ -262,8 +273,8 @@ The pipeline is split into two sub-workflows (selectable with `--stage`, see [St
 | `QC_METRICS` | KAS_ANALYZER | `analyze.nf` | FRiP + multiBigwigSummary correlation |
 | `DEDUP_CONSENSUS` | KAS_ANALYZER | `picard_gencore_dedup.nf` | picard MarkDuplicates + gencore consensus dedup |
 | `SPLIT_BAM_PSEUDOREPS` | KAS_ANALYZER | `split_bam_pseudoreps.nf` | (conditional) deterministic BAM partition for n=1 conditions |
-| `BUILD_DIFFBIND_SAMPLESHEET` | DIFFERENTIAL | `differential_peaks.nf` | Fan the cohort into one DiffBind samplesheet per treatment case (stage 1 stops here) |
-| `DIFFERENTIAL_PEAKS` | DIFFERENTIAL | `differential_peaks.nf` | DiffBind (DESeq2 backend); one control-vs-case contrast per case, output under `06_differential/<case>/` |
+| `BUILD_DIFFBIND_SAMPLESHEET` | KAS_ANALYZER | `differential_peaks.nf` | Fan the cohort into one DiffBind samplesheet per treatment case |
+| `DIFFERENTIAL_PEAKS` | DIFFERENTIAL | `differential_peaks.nf` | DiffBind (DESeq2 backend); one control-vs-case contrast per case, keeping peaks with FDR < `--fdr` and log2FC > `--lfc`. Output under `06_differential/<case>/` |
 | `CALL_VARIANTS` | DIFFERENTIAL | `mutect2_call_variants.nf` | Mutect2 tumor-only + germline + PoN, per case, restricted to that case's differential peaks |
 | `GUIDESCAN_SEED` | DIFFERENTIAL | `guidescan.nf` | Exact-seed grep + bounded-DP CFD scoring; most-likely gRNA binding site per differential peak (requires `--guidescan_grna` or `--guidescan_params`) |
 | `GUIDESCAN_ENUMERATE` | DIFFERENTIAL | `guidescan.nf` | GuideScan2 enumerate + CFD over remaining peaks (disable with `--skip_guidescan_enumerate`) |
@@ -272,12 +283,12 @@ The pipeline is split into two sub-workflows (selectable with `--stage`, see [St
 | `GUIDESCAN_SEED_NONDIFF` | DIFFERENTIAL | `guidescan.nf` | sharp non-differential arm: seed grep over `nondiff_peaks.bed` (`--sharp_nondiff`) |
 | `CALL_VARIANTS_NONDIFF` | DIFFERENTIAL | `mutect2_call_variants.nf` | non-differential arm: Mutect2 over the arm's scored peaks |
 | `VARIANT_SUBTRACT_NONDIFF` | DIFFERENTIAL | `variant_subtract.nf` | non-differential arm: treatment minus control |
-| `PROTOSPACER_NONDIFF` | DIFFERENTIAL | `protospacer.nf` | non-differential arm: separate figure set, no on-target |
+| `PROTOSPACER_NONDIFF` | DIFFERENTIAL | `protospacer.nf` | non-differential arm: separate figure set |
 | `BROAD_REGIONS` | DIFFERENTIAL | `broad_regions.nf` | broad arm: EPIC2 replicate consensus (`--broad_nondiff`) |
 | `GUIDESCAN_SEED_BROAD` | DIFFERENTIAL | `guidescan.nf` | broad arm: seed grep over `broad_regions.bed`, all anchors |
 | `CALL_VARIANTS_BROAD` | DIFFERENTIAL | `mutect2_call_variants.nf` | broad arm: Mutect2 over the arm's scored regions |
 | `VARIANT_SUBTRACT_BROAD` | DIFFERENTIAL | `variant_subtract.nf` | broad arm: treatment minus control |
-| `PROTOSPACER_BROAD` | DIFFERENTIAL | `protospacer.nf` | broad arm: separate figure set, no on-target |
+| `PROTOSPACER_BROAD` | DIFFERENTIAL | `protospacer.nf` | broad arm: separate figure set |
 | `ARM_OVERLAP` | DIFFERENTIAL | `broad_regions.nf` | broad arm: overlap table + Venn of the arms' variant-calling intervals |
 
 ## Replicate Handling
@@ -286,15 +297,21 @@ The pipeline is split into two sub-workflows (selectable with `--stage`, see [St
 |---|---|
 | n >= 2 | Standard DiffBind path with biological replicates (publication-grade) |
 | n = 1 | Auto-split BAM into 3 deterministic pseudo-replicates (`--n_pseudo_replicates`); fold-change estimates remain valid; p-values are optimistic -- **not for biological inference** |
-| n = 0 (non-input) | Pipeline fails fast with a clear error |
+| no `control` or no treatment rows | `BUILD_DIFFBIND_SAMPLESHEET` fails with an error naming the condition labels it found |
+
+A case with pseudo-replicates on either side uses library-size normalization (`DBA_NORM_LIB`) and a stricter default log2FC cutoff of 2. `--lfc`.
 
 ## Parameters
 
-Run `nextflow run <pipeline> --help` for the full list with descriptions.
+Run `nextflow run main.nf --help` for the full list with descriptions.
 
 Key parameters and their defaults:
 | Param | Default | Role |
 |---|---|---|
+| `--samplesheet` | (required) | Samplesheet CSV (see [Samplesheet](#samplesheet)) |
+| `--refdir` | (required) | Directory of staged references (see [Required References](#required-references)) |
+| `--outdir` | results | Output directory |
+| `--container` | `<repo>/becaskas.sif` | Container image used by every process (see [Container support](#container-support)) |
 | `--stage` | all | Stage to run: `all` / `kas_analyzer` / `diffbind` |
 | `--genome` | hg38 | Reference file prefix in `--refdir`, e.g. `hg38_no_alt` (see [Required References](#required-references)) |
 | `--clip_r2` | 12 | Bases clipped from 5' of R2 (adaptase library prep) |
@@ -314,7 +331,7 @@ Key parameters and their defaults:
 | `--guidescan_rna_bulges` | 2 | Max 1-nt RNA bulges (both stages) |
 | `--guidescan_dna_bulges` | 2 | Max 1-nt DNA bulges (both stages) |
 | `--guidescan_chunk_size` | 150 | Stage 1: peaks per padded-extraction unit |
-| `--guidescan_summit_width` | 0 | Stage 1: restrict the seed search to the central N bp of each peak; 0 = full peak (**leave at 0**, see the warning above) |
+| `--guidescan_summit_width` | 0 | Stage 1: restrict the seed search to the central N bp of each peak; 0 = full peak |
 | `--skip_guidescan_enumerate` | false | Skip stage 2 (GuideScan2 enumerate), leaving stage 1's seed-anchored results only |
 | `--guidescan_enumerate_mismatches` | 8 | Stage 2 search budget; separate from `--guidescan_mismatches` and deliberately lower |
 | `--guidescan_enumerate_chunk_size` | 15 | Stage 2: peaks per GuideScan2 index+enumerate unit |
@@ -323,16 +340,19 @@ Key parameters and their defaults:
 | `--protospacer_both_strands` | false | `variant_altcount_in_protospacer` plots: also show TS edits below the axis (default: NTS only; the CSV always has both strands) |
 | `--sharp_nondiff` | false | Run arm for non-differential MACS2 sharp peaks (see [The Non-Differential Arms](#the-non-differential-arms)) |
 | `--broad_nondiff` | false | Run arm for non-differential EPIC2 broad peaks (see [The Non-Differential Arms](#the-non-differential-arms))|
+| `--partition` | normal | SLURM partition(s) for task jobs; set to partitions your account can use |
+| `--clusterOptions` | (none) | Extra flags appended to every task's `sbatch` call, e.g. `--qos=long` |
+| `--max_cpus` / `--max_memory` / `--max_time` | 16 / 128.GB / 48.h | Upper limits on any one task's request |
 
 ## Tool dependencies
 
 Tool dependencies and pinned versions live in:
-- [env/env.yaml](env/env.yaml) - conda environment spec (bioinformatics tools: BWA, samtools, bcftools, bedtools, MACS2, trim_galore, FastQC, deepTools, picard, gencore, GATK4, GuideScan2, UCSC bedGraphToBigWig).
-- KAS-Analyzer 2.0.0 is cloned from `https://github.com/Ruitulyu/KAS-Analyzer.git`
+- [env/env.yaml](env/env.yaml) - conda environment spec: trim_galore, cutadapt, FastQC, Bowtie2, samtools, bcftools, bedtools, MACS2, EPIC2, deepTools, picard, gencore, GATK4, GuideScan2, UCSC bedGraphToBigWig, and R with DiffBind, DESeq2 and edgeR.
+- [env/becaskas.def](env/becaskas.def) - Apptainer recipe; also clones KAS-Analyzer v2.0.0 from `https://github.com/Ruitulyu/KAS-Analyzer.git`
 
 ## Citation
 
 If you use this pipeline, please cite the preprint:
-> Wang T., Jessa S., Marinov G.K., Klemm S., Kundaje A., Greenleaf W.J. (2025).
+> Wang T., Jessa S., Liu E.SX., Marinov G.K., Klemm S., Kundaje A., Greenleaf W.J. (2026).
 > Sensitive, direct detection of non-coding off-target base editor unwinding and editing in primary cells.
 > bioRxiv. doi:10.1101/2025.09.25.678665
