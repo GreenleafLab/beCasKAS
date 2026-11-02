@@ -2,7 +2,7 @@
 
 Reproducible Nextflow pipeline implementing the beCasKAS computational analysis from
 [Wang T. et al., bioRxiv 2025](https://www.biorxiv.org/content/10.1101/2025.09.25.678665v1).
-Detects non-coding off-target base editor unwinding and editing in primary cells.
+Detects non-coding off-target base editor unwinding and editing.
 
 ## Quick start
 ### Requirements
@@ -257,40 +257,6 @@ results/
   pipeline.success                         # or pipeline.failure when the run ends (pipeline.running while it runs)
 ```
 
-## Pipeline Structure
-
-The pipeline is split into two sub-workflows (selectable with `--stage`, see [Staged Execution](#staged-execution)):
-- **`KAS_ANALYZER`** (stage 1) - trim/align through the per-case DiffBind samplesheets
-- **`DIFFERENTIAL`** (stage 2) - differential peaks, variants, guidescan, protospacer, plus the optional non-differential and broad arms
-
-| Process | Stage | Source file | Description |
-|---|---|---|---|
-| `TRIM_ALIGN` | KAS_ANALYZER | `trim_align.nf` | trim_galore + KAS-Analyzer KAS-seq (Bowtie2, KAS-Analyzer's default aligner) |
-| `PEAK_CALL` | KAS_ANALYZER | `analyze.nf` | MACS2 via KAS-Analyzer, treatment vs background |
-| `PEAK_CALL_BROAD` | KAS_ANALYZER | `analyze.nf` | EPIC2 broad call on the same inputs; feeds the broad arm (`--broad_nondiff`) |
-| `KAS_STATISTICS` | KAS_ANALYZER | `analyze.nf` | Cohort RPM statistics -> ratios.txt |
-| `NORMALIZE_BIGWIG` | KAS_ANALYZER | `analyze.nf` | RPM-ratio normalized bedGraph + UCSC bigWig |
-| `QC_METRICS` | KAS_ANALYZER | `analyze.nf` | FRiP + multiBigwigSummary correlation |
-| `DEDUP_CONSENSUS` | KAS_ANALYZER | `picard_gencore_dedup.nf` | picard MarkDuplicates + gencore consensus dedup |
-| `SPLIT_BAM_PSEUDOREPS` | KAS_ANALYZER | `split_bam_pseudoreps.nf` | (conditional) deterministic BAM partition for n=1 conditions |
-| `BUILD_DIFFBIND_SAMPLESHEET` | KAS_ANALYZER | `differential_peaks.nf` | Fan the cohort into one DiffBind samplesheet per treatment case |
-| `DIFFERENTIAL_PEAKS` | DIFFERENTIAL | `differential_peaks.nf` | DiffBind (DESeq2 backend); one control-vs-case contrast per case, keeping peaks with FDR < `--fdr` and log2FC > `--lfc`. Output under `06_differential/<case>/` |
-| `CALL_VARIANTS` | DIFFERENTIAL | `mutect2_call_variants.nf` | Mutect2 tumor-only + germline + PoN, per case, restricted to that case's differential peaks |
-| `GUIDESCAN_SEED` | DIFFERENTIAL | `guidescan.nf` | Exact-seed grep + bounded-DP CFD scoring; most-likely gRNA binding site per differential peak (requires `--guidescan_grna` or `--guidescan_params`) |
-| `GUIDESCAN_ENUMERATE` | DIFFERENTIAL | `guidescan.nf` | GuideScan2 enumerate + CFD over remaining peaks (disable with `--skip_guidescan_enumerate`) |
-| `VARIANT_SUBTRACT` | DIFFERENTIAL | `variant_subtract.nf` | Per case: merge control and treatment replicate VCFs, subtract control positions, AD/DP filter, split CT/AG |
-| `PROTOSPACER` | DIFFERENTIAL | `protospacer.nf` | Cohort-level: variant position within the predicted protospacer, per substitution type (disable with `--skip_protospacer`) |
-| `GUIDESCAN_SEED_NONDIFF` | DIFFERENTIAL | `guidescan.nf` | sharp non-differential arm: seed grep over `nondiff_peaks.bed` (`--sharp_nondiff`) |
-| `CALL_VARIANTS_NONDIFF` | DIFFERENTIAL | `mutect2_call_variants.nf` | non-differential arm: Mutect2 over the arm's scored peaks |
-| `VARIANT_SUBTRACT_NONDIFF` | DIFFERENTIAL | `variant_subtract.nf` | non-differential arm: treatment minus control |
-| `PROTOSPACER_NONDIFF` | DIFFERENTIAL | `protospacer.nf` | non-differential arm: separate figure set |
-| `BROAD_REGIONS` | DIFFERENTIAL | `broad_regions.nf` | broad arm: EPIC2 replicate consensus (`--broad_nondiff`) |
-| `GUIDESCAN_SEED_BROAD` | DIFFERENTIAL | `guidescan.nf` | broad arm: seed grep over `broad_regions.bed`, all anchors |
-| `CALL_VARIANTS_BROAD` | DIFFERENTIAL | `mutect2_call_variants.nf` | broad arm: Mutect2 over the arm's scored regions |
-| `VARIANT_SUBTRACT_BROAD` | DIFFERENTIAL | `variant_subtract.nf` | broad arm: treatment minus control |
-| `PROTOSPACER_BROAD` | DIFFERENTIAL | `protospacer.nf` | broad arm: separate figure set |
-| `ARM_OVERLAP` | DIFFERENTIAL | `broad_regions.nf` | broad arm: overlap table + Venn of the arms' variant-calling intervals |
-
 ## Replicate Handling
 
 | Samples per condition | Behavior |
@@ -353,6 +319,6 @@ Tool dependencies and pinned versions live in:
 ## Citation
 
 If you use this pipeline, please cite the preprint:
-> Wang T., Jessa S., Liu E.SX., Marinov G.K., Klemm S., Kundaje A., Greenleaf W.J. (2026).
+> Wang T., Jessa S., Liu E.SX., Marinov G.K., Klemm S., Kundaje A., Greenleaf W.J. (2025).
 > Sensitive, direct detection of non-coding off-target base editor unwinding and editing in primary cells.
 > bioRxiv. doi:10.1101/2025.09.25.678665
