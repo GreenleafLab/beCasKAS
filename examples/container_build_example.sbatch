@@ -3,7 +3,7 @@
 #SBATCH --time=04:00:00
 #SBATCH --cpus-per-task=24
 #SBATCH --mem=48G
-#SBATCH --partition=normal,biochem,sfgf,wjg
+#SBATCH --partition=normal
 #SBATCH --output=becaskas-sif-build-%j.out
 #SBATCH --error=becaskas-sif-build-%j.err
 set -euo pipefail
