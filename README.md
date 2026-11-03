@@ -60,7 +60,7 @@ Apptainer is the default container runtime (configured in [nextflow.config](next
 
 ## Required References
 
-Stage the following reference layout under `--refdir`:
+Supply reference genome for read mapping, GATK variant calling resource files. Stage the following reference layout under `--refdir`:
 
 ```
 hg38.fasta                              # UCSC hg38 fasta
@@ -104,6 +104,8 @@ wget $BASE/1000g_pon.hg38.vcf.gz.tbi
 
 ## Samplesheet
 
+Declares sample libraries for analysis (editor + gRNA, editor, background)
+
 CSV with columns: `sample_id`, `fastq_1`, `fastq_2`, `condition`, `replicate`, `background_id`. See [samplesheet_example.csv](examples/samplesheet_example.csv).
 
 | Column | Required | Description |
@@ -117,7 +119,8 @@ CSV with columns: `sample_id`, `fastq_1`, `fastq_2`, `condition`, `replicate`, `
 
 ## Staged Execution
 
-The pipeline runs as two stages (see [Pipeline Structure](#pipeline-structure)).
+
+Splits run between per-sample ssDNA measurements and cross-sample comparisons. The pipeline runs as two stages: `KAS_ANALYZER` (trim/align through the per-case DiffBind samplesheets) and `DIFFERENTIAL` (differential peaks, variants, guidescan, protospacer, plus the optional non-differential arms).
 
 - `--stage all` (default) - full pipeline end to end.
 - `--stage kas_analyzer` - run everything through the per-case DiffBind samplesheet generation, then stop. The samplesheets are published to `results/06_differential/samplesheets/` and the case summary is printed to the run log.
@@ -136,6 +139,8 @@ nextflow run main.nf -resume --stage diffbind --diffbind_samplesheet_dir results
 ```
 
 ### Adjusting Differential Expression Parameters
+
+Determines and separates out gRNA-directed unwinding sites (differential peaks) compared to editor-only controls. 
 
 By default, multiple treatment cases (distinct `condition` labels) are each compared against the single shared `control`. Per-case differential parameters can be modified in the second stage (`--stage diffbind`) without re-running the rest of the pipeline. Write a `diffbind_params.json` file that maps each case to the parameters you would like to change:
 ```
@@ -158,6 +163,8 @@ Only the overridden case's `DIFFERENTIAL_PEAKS` and its downstream will re-execu
 
 ## Predicting gRNA Binding Sites
 
+Aligns the gRNA within a differential (unwound) peak, locates the editor bound protospacer and measures match to the on-target sequence.
+
 Set `--guidescan_grna` (or `--guidescan_params`) to enable these steps.
 
 Given a base editor gRNA (protospacer + PAM), the pipeline reports the most likely
@@ -165,7 +172,7 @@ binding site per differential peak, scored with Doench 2016 CFD, in two stages:
 
 **Stage 1 - `GUIDESCAN_SEED`** Greps each peak and its reverse
 complement for an exact *seed* match (a substring of spacer + PAM: by default the
-PAM-proximal 5 nt plus the PAM, so `GGCACTGCGGCTGGAGGTGG` + `NGG` -> `GGTGGNGG`).
+PAM-proximal 5 nt plus the PAM, so `CCCTACCTGTCACCAGGACC` + `NGG` -> `GGACCNGG`).
 Peaks with no hit are reported with `seed_hits = 0`.
 
 **Stage 2 - `GUIDESCAN_ENUMERATE`** Runs GuideScan2 `enumerate` over the `seed_hits == 0` peaks. This step is computationally expensive for large differential peak sets: pass `--skip_guidescan_enumerate` to skip the second stage for a fast first pass of stage 1 alone.
@@ -177,7 +184,7 @@ nextflow run main.nf --stage diffbind -resume \
     --samplesheet samples.csv --refdir /path/to/refs --outdir results/
 ```
 
-A single `--guidescan_grna` applies globally to every case in the run. For multi-case runs that require separate binding sequences, write a `guidescan_params.json` keyed by `case_id`:
+A single `--guidescan_grna` applies globally to every case in the run. To set the gRNA per case, write a `guidescan_params.json` keyed by `case_id`.
 ```
 {
   "ABE8e_HEK4": { "grna": "GGCACTGCGGCTGGAGGTGG" },
@@ -195,9 +202,13 @@ nextflow run main.nf --stage diffbind -resume \
 
 ## The Non-Differential Arms
 
+Looks for editing at gRNA-bound sites in high endogenous ssDNA regions that may not be caught by the differential arm due to high existing signal.
+
 Non-differential arms are off by default and run independent workflows to each other. They are enabled with the flags outlined below and both must be specified to run them together.
 
 ### Sharp / Narrow (`--sharp_nondiff`)
+
+Covers gRNA-bound sites that sit in concentrated heavily transcribed loci (high endogenous ssDNA signal).
 
 `--sharp_nondiff` runs guidescan seed, variant calling and protospacer over
 `nondiff_peaks.bed`, MACS2 treatment peaks that do not overlap a differential peak. Accounts for highly transcribed loci with large endogenous ssDNA signal (un-caught gRNA-directed edits).
@@ -209,6 +220,8 @@ nextflow run main.nf --stage diffbind -resume --sharp_nondiff \
 ```
 
 ### Broad (`--broad_nondiff`)
+
+Covers gRNA-bound sites inside broad ssDNA domains, where the unwinding is spread across a long stretch of chromatin.
 
 `--broad_nondiff` runs EPIC2 to call broad peaks, then guidescan seed, variant calling and protospacer over `broad_regions.bed`. Finds gRNA-directed off-targets in broad KAS-seq domains.
 
@@ -223,6 +236,8 @@ nextflow run main.nf --stage diffbind -resume --broad_nondiff \
 ```
 
 ## Output
+
+Outputs are separated and numbered by pipeline sub-process outputs:
 
 ```
 results/
@@ -241,7 +256,7 @@ results/
   08_guidescan/<case>/                     # binding_sites_seed.tsv, binding_sites_enumerate.tsv, binding_sites_seed_raw_hits.tsv,
                                            #   scored_peaks.bed, no_seed_peaks.bed (stage 2 input)
   09_variants_subtracted/<case>/           # <case>_vs_control_relcontrol_filt_{no-alt-chr,CT,AG}.vcf
-  10_protospacer/                          # cohort figures, CSVs and vcf/ (see Protospacer Position Analysis)
+  10_protospacer/                          # cohort figures + CSVs (edit position within the protospacer), vcf/
   11_sharp_nondiff/                        # --sharp_nondiff only
     <case>/guidescan/                      # binding_sites_seed.tsv, scored_peaks.bed
     <case>/variants/${sample_id}/          # *.vcf
@@ -257,12 +272,14 @@ results/
   pipeline.success                         # or pipeline.failure when the run ends (pipeline.running while it runs)
 ```
 
-## Replicate Handling
+## DiffBind Replicate Handling
+
+Allows ssDNA comparison when a condition has only one library. Splits library's reads into pseudo-replicates to stand in for replication.
 
 | Samples per condition | Behavior |
 |---|---|
-| n >= 2 | Standard DiffBind path with biological replicates (publication-grade) |
-| n = 1 | Auto-split BAM into 3 deterministic pseudo-replicates (`--n_pseudo_replicates`); fold-change estimates remain valid; p-values are optimistic -- **not for biological inference** |
+| n >= 2 | Standard DiffBind path with biological replicates |
+| n = 1 | Auto-split BAM into 3 deterministic pseudo-replicates (`--n_pseudo_replicates`) |
 | no `control` or no treatment rows | `BUILD_DIFFBIND_SAMPLESHEET` fails with an error naming the condition labels it found |
 
 A case with pseudo-replicates on either side uses library-size normalization (`DBA_NORM_LIB`) and a stricter default log2FC cutoff of 2. `--lfc`.
@@ -301,7 +318,7 @@ Key parameters and their defaults:
 | `--skip_guidescan_enumerate` | false | Skip stage 2 (GuideScan2 enumerate), leaving stage 1's seed-anchored results only |
 | `--guidescan_enumerate_mismatches` | 8 | Stage 2 search budget; separate from `--guidescan_mismatches` and deliberately lower |
 | `--guidescan_enumerate_chunk_size` | 15 | Stage 2: peaks per GuideScan2 index+enumerate unit |
-| `--skip_protospacer` | false | Skip the cohort-level protospacer position analysis (see [Protospacer Position Analysis](#protospacer-position-analysis)) |
+| `--skip_protospacer` | false | Skip the cohort-level protospacer position analysis |
 | `--protospacer_palette` | (none) | JSON map of `case_id` -> hex colour, for exact figure colour parity |
 | `--protospacer_both_strands` | false | `variant_altcount_in_protospacer` plots: also show TS edits below the axis (default: NTS only; the CSV always has both strands) |
 | `--sharp_nondiff` | false | Run arm for non-differential MACS2 sharp peaks (see [The Non-Differential Arms](#the-non-differential-arms)) |
