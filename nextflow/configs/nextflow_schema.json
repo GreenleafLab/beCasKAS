@@ -32,7 +32,7 @@
                 "refdir": {
                     "type": "string",
                     "format": "directory-path",
-                    "description": "Directory containing pre-staged references in a flat layout (all files at the top level, no subdirectories). Required files, for <genome> = --genome and <assembly> = the part of --genome before the first '_': <genome>.fasta, <genome>.fasta.fai, <genome>.dict, <genome>.genome (chrom sizes), <genome>.{1,2,3,4,rev.1,rev.2}.bt2 (bowtie2 index prefix <genome>), af-only-gnomad.<assembly>.vcf.gz(.tbi), 1000g_pon.<assembly>.vcf.gz(.tbi). Several genomes can share one refdir. User is responsible for staging these files; see README."
+                    "description": "Directory containing pre-staged references in a flat layout (all files at the top level, no subdirectories). Required files, for <genome> = --genome and <assembly> = the part of --genome before the first '_': <genome>.fasta, <genome>.fasta.fai, <genome>.dict, <genome>.{1,2,3,4,rev.1,rev.2}.bt2 (bowtie2 index prefix <genome>), af-only-gnomad.<assembly>.vcf.gz(.tbi), 1000g_pon.<assembly>.vcf.gz(.tbi). Several genomes can share one refdir. User is responsible for staging these files; see README."
                 },
                 "genome": {
                     "type": "string",
@@ -52,12 +52,6 @@
                 }
             }
         },
-        "peak_call_options": {
-            "title": "peak_call step",
-            "type": "object",
-            "properties": {
-            }
-        },
         "staging_options": {
             "title": "Pipeline staging",
             "type": "object",
@@ -67,6 +61,10 @@
                     "enum": ["all", "kas_analyzer", "diffbind"],
                     "default": "all",
                     "description": "Which stage(s) to run. 'all' = full pipeline; 'kas_analyzer' = stop after the per-case DiffBind samplesheets; 'diffbind' = run the differential + variant stage (use with -resume after a kas_analyzer run)."
+                },
+                "diffbind_samplesheet_dir": {
+                    "type": "string",
+                    "description": "Directory of edited diffbind_samplesheet_<case>.csv files to use in place of the generated ones (--stage diffbind)."
                 }
             }
         },
@@ -101,6 +99,10 @@
                     "default": 3,
                     "minimum": 2,
                     "description": "Pseudo-replicates per condition when only n=1 sample is provided"
+                },
+                "diffbind_params": {
+                    "type": "string",
+                    "description": "JSON file of per-case overrides, keyed by case_id: fdr, lfc, greylist, and argument maps for dba.count, dba.normalize and dba.analyze. See README."
                 }
             }
         },
@@ -119,6 +121,10 @@
             "title": "guidescan step (optional)",
             "type": "object",
             "properties": {
+                "guidescan_params": {
+                    "type": "string",
+                    "description": "JSON file of per-case guidescan overrides, keyed by case_id (grna, pam, seed, mismatches, rna_bulges, dna_bulges, chunk_size, summit_width, enumerate_mismatches, enumerate_chunk_size). Cases it does not name fall back to the --guidescan_* values."
+                },
                 "guidescan_grna": {
                     "type": "string",
                     "description": "gRNA spacer (20 nt, no PAM) to search for in each case's differential peaks. When unset and no --guidescan_params is given, neither guidescan stage runs. For cases targeting different loci, set the spacer per case via --guidescan_params; this is the fallback for cases that JSON does not name."
@@ -160,7 +166,7 @@
                     "type": "integer",
                     "default": 0,
                     "minimum": 0,
-                    "description": "Stage 1: if >0, restrict the seed search to the centre N bp of each peak. LEAVE AT 0 (full peak) unless you have a specific reason -- a width of 100 was measured to miss the true on-target site in HEK4, HEK4_noSort, and CD7 (chr17:82316661-82316683 in peak chr17:82316540-82316940): the anchor was found but fell out of bounds for scoring."
+                    "description": "Stage 1: if >0, restrict the seed search to the centre N bp of each peak. LEAVE AT 0 (full peak) unless you have a specific reason: a site near the peak edge falls out of bounds for scoring, and a width of 100 was measured to miss the true on-target site. PROTOSPACER stops if a case has no on-target site."
                 },
                 "skip_guidescan_enumerate": {
                     "type": "boolean",
@@ -177,6 +183,10 @@
                     "type": "boolean",
                     "default": false,
                     "description": "Skip PROTOSPACER, the final step that maps each background-subtracted variant onto its 1-based position within the predicted 20 nt protospacer and writes the figure set. It runs by default whenever a gRNA is configured, since it is the readout the rest of the differential stage exists to produce. Skip it for a run where only the intermediate tables are wanted, or on a container without r-patchwork."
+                },
+                "protospacer_palette": {
+                    "type": "string",
+                    "description": "JSON file mapping case_id to a hex colour for the protospacer figures. Default: a fixed 8-colour ramp in case_id order."
                 },
                 "protospacer_both_strands": {
                     "type": "boolean",
@@ -207,20 +217,23 @@
             "properties": {
                 "max_cpus": {
                     "type": "integer",
-                    "default": 16
+                    "default": 16,
+                    "description": "Upper limit on CPUs for any one task (retries included)"
                 },
                 "max_memory": {
                     "type": "string",
-                    "default": "128.GB"
+                    "default": "128.GB",
+                    "description": "Upper limit on memory for any one task (retries included)"
                 },
                 "max_time": {
                     "type": "string",
-                    "default": "48.h"
+                    "default": "48.h",
+                    "description": "Upper limit on walltime for any one task (retries included)"
                 },
                 "partition": {
                     "type": "string",
-                    "default": "sfgf,wjg,biochem,normal",
-                    "description": "SLURM partition(s) for task jobs; a comma-separated list is allowed"
+                    "default": "normal",
+                    "description": "SLURM partition(s) for task jobs; a comma-separated list is allowed. The default is Sherlock's general partition: set your own on other clusters."
                 },
                 "clusterOptions": {
                     "type": "string",
@@ -237,16 +250,6 @@
                     "default": false,
                     "description": "Display help text"
                 },
-                "validate_params": {
-                    "type": "boolean",
-                    "default": true,
-                    "description": "Validate parameters against the schema at runtime"
-                },
-                "schema_ignore_params": {
-                    "type": "string",
-                    "default": "",
-                    "description": "Comma-separated list of parameter names to ignore during schema validation"
-                },
                 "container": {
                     "type": "string",
                     "description": "Path to the Apptainer/Singularity/Docker image used by all processes"
@@ -258,7 +261,6 @@
         {"$ref": "#/definitions/input_output_options"},
         {"$ref": "#/definitions/reference_options"},
         {"$ref": "#/definitions/trim_align_options"},
-        {"$ref": "#/definitions/peak_call_options"},
         {"$ref": "#/definitions/staging_options"},
         {"$ref": "#/definitions/differential_peaks_options"},
         {"$ref": "#/definitions/reproducibility_options"},

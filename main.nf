@@ -1,7 +1,7 @@
 #!/usr/bin/env nextflow
 nextflow.enable.dsl = 2
 
-include { validateParameters; paramsSummaryLog; fromSamplesheet } from 'plugin/nf-validation'
+include { validateParameters; paramsHelp; paramsSummaryLog; fromSamplesheet } from 'plugin/nf-validation'
 
 include { TRIM_ALIGN }                                                       from './nextflow/modules/trim_align'
 include { PEAK_CALL; PEAK_CALL_BROAD; KAS_STATISTICS; NORMALIZE_BIGWIG; QC_METRICS } from './nextflow/modules/analyze'
@@ -470,6 +470,12 @@ workflow DIFFERENTIAL {
 workflow {
 
     main:
+    if (params.help) {
+        log.info paramsHelp("nextflow run main.nf --samplesheet samples.csv --refdir /path/to/refs --outdir results",
+                            parameters_schema: 'nextflow/configs/nextflow_schema.json')
+        exit 0
+    }
+
     // Validate params
     validateParameters(parameters_schema: 'nextflow/configs/nextflow_schema.json')
     log.info paramsSummaryLog(workflow, parameters_schema: 'nextflow/configs/nextflow_schema.json')
