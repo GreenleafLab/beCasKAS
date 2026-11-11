@@ -243,7 +243,8 @@ read_sites <- function(tsv_path, cond = NULL) {
   # on-target = the unique 0-mismatch/0-bulge hit (needs SUMMIT_WIDTH=0 in guidescan)
   df$on_target <- as.integer(df$mismatches) == 0 &
     as.integer(df$rna_bulges) == 0 & as.integer(df$dna_bulges) == 0
-  df[, c("chrom", "start", "end", "strand", "on_target", "site_source")]
+  df[, c("chrom", "start", "end", "strand", "on_target", "site_source",
+         "peak_chrom", "peak_start", "peak_end")]
 }
 
 position_in_protospacer <- function(vcf_path, tsv_path, samples, cond = NULL) {
@@ -291,7 +292,9 @@ position_in_protospacer <- function(vcf_path, tsv_path, samples, cond = NULL) {
                         alt_count = variants$alt_count[matched],
                         chrom = variants$chrom[matched], genomic_pos = variants$pos[matched],
                         ref = variants$ref[matched], alt = variants$alt[matched],
-                        on_target = sites$on_target[hit[matched]])
+                        on_target = sites$on_target[hit[matched]],
+                        peak_id = paste(sites$peak_chrom, sites$peak_start,
+                                        sites$peak_end)[hit[matched]])
   result$af_list <- variants$af_list[matched]
   result
 }
@@ -342,6 +345,30 @@ on_target_label <- setNames(vapply(conditions, function(cond) {
   best <- ot[which.max(ot$mean_af), ]
   sprintf("%s (on-target max AF %.2f\u00b1%.2f)", cond, best$mean_af, best$sem_af)
 }, character(1)), conditions)
+
+# add subtitle
+RLOOP_SIGNATURES <- c("A>G", "C>T")
+
+rloop_label <- setNames(vapply(conditions, function(cond) {
+  hits <- hits_by_condition[[cond]]
+  n_peaks <- length(readLines(file.path(diff_dir, peakbed_files[[cond]]))) -
+    length(unique(hits$peak_id[hits$on_target]))
+  hits <- hits[!hits$on_target & !is.na(hits$af), ]
+  paste(vapply(RLOOP_SIGNATURES, function(sig) {
+    is_sig <- hits$ps_type == sig
+    if (!any(is_sig) || n_peaks <= 0) return(sprintf("%s: no edited R-loops", sig))
+    per_peak <- tapply(hits$af[is_sig], hits$peak_id[is_sig], max)
+    sprintf("%s: %.1f%% of R-loops edited (%s/%s), median AF %.1f%%",
+            sig, 100 * length(per_peak) / n_peaks,
+            formatC(length(per_peak), format = "d", big.mark = ","),
+            formatC(n_peaks, format = "d", big.mark = ","),
+            100 * median(per_peak))
+  }, character(1)), collapse = "\n")
+}, character(1)), conditions)
+
+write.csv(data.frame(condition = conditions,
+                     rloop_summary = gsub("\n", " | ", rloop_label[conditions])),
+          file.path(out_dir, "rloop_offtarget_summary.csv"), row.names = FALSE)
 
 # Stack height per position, summed separately for up and down so they don't cancel.
 signed_totals <- function(df, value_col) {
@@ -428,10 +455,12 @@ altcount_plots <- lapply(conditions, function(cond) {
     scale_y_continuous(labels = function(v) format(abs(v), big.mark = ",")) +
     coord_cartesian(xlim = x_range,
                     ylim = c(if (SHOW_TS) -altcount_y_lim else 0, altcount_y_lim)) +
-    labs(x = X_LAB, y = "Total ALT reads (3 reps)", title = on_target_label[[cond]]) +
+    labs(x = X_LAB, y = "Total ALT reads (3 reps)", title = on_target_label[[cond]],
+         subtitle = rloop_label[[cond]]) +
     theme_minimal(base_size = 11, base_family = PLOT_FONT) +
     theme(panel.grid.minor = element_blank(),
-          plot.title = element_text(face = "bold", color = condition_palette[[cond]]))
+          plot.title = element_text(face = "bold", color = condition_palette[[cond]]),
+          plot.subtitle = element_text(size = 7, lineheight = 1.2, color = "grey25"))
 })
 
 p_altcount <- wrap_plots(altcount_plots, ncol = panel_ncol) +
