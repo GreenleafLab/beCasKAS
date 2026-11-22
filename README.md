@@ -336,6 +336,6 @@ Tool dependencies and pinned versions live in:
 ## Citation
 
 If you use this pipeline, please cite the preprint:
-> Wang T., Jessa S., Liu E.SX., Marinov G.K., Klemm S., Kundaje A., Greenleaf W.J. (2025).
+> Wang T., Jessa S., Liu E.S.X., Marinov G.K., Klemm S., Russkamp N.F., Porteus M.H., Kundaje A., Greenleaf W.J. (2025).
 > Sensitive, direct detection of non-coding off-target base editor unwinding and editing in primary cells.
 > bioRxiv. doi:10.1101/2025.09.25.678665
